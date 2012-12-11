@@ -8,7 +8,8 @@
 			return (value+1) % QUEUE_SIZE;
 	}
 
-	__global__ void cal_indx (int block_size,int block_2_size,int indices_now){
+	// config should be <1,4>
+	__device__ void cal_indx_1(int block_size,int block_2_size,int indices_now){
 		int id = threadIdx.x;
 		int group_id = id >> 1;
 		int sub_id = id & 1;
@@ -53,6 +54,15 @@
 			list_p[indices_next][ opposite_sub_id ] = oppositeList + next_opposite_offset;//set opposite pointer
 			swapped[ indices_next ] = swapped[ indices_now ] ^ group_id;
 		}
+	}
+
+	//config should be dim3 ths(16,2)
+	__device__ void cal_indx_2(){
+
+	}
+
+	__global__ void cal_indx (int block_size,int block_2_size,int indices_now){
+		cal_indx_1(block_size,block_2_size,indices_now);
 	}
 
 	//special case for cal_indices

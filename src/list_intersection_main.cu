@@ -315,7 +315,7 @@ __device__ int _nm[2];
 		cpuResult = new int [n];
 	}
 
-#if 1
+#if 0
 
 	extern int * scan_buffer;
 
