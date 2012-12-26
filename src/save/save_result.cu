@@ -26,13 +26,6 @@ extern cudaStream_t *scan_stream;
 	}
 
 
-	inline __device__ void warp_save(volatile int * shared , int *result, int *V, int *L1,int offset_addition){
-		shared[threadIdx.x] = V[threadIdx.x];
-		if ( shared[threadIdx.x] - shared[threadIdx.x-1] >0 ){
-			result[ threadIdx.x + offset_addition ] = L1[ threadIdx.x ];
-		}
-	}
-
 	inline __device__ void block_update_and_save(const int &id, int *V, int partial_addup,int indices_now){
 		int *L1 = list_p[indices_now][0];
 

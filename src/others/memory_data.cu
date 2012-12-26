@@ -35,6 +35,9 @@
 		printf("init_device_var_kernel addr of list_p :%llx \t list_p0: %llx\n",list_p,list_p0);
 		list_p[0][0] = list_p0[0];
 		list_p[0][1] = list_p0[1];
+		FOR_I(0,QUEUE_SIZE){
+			partitions[i][0][0] = partitions[i][0][1] = -1;
+		}
 		swapped[0] = 0;//false
 	}
 

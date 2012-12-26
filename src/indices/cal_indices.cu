@@ -56,14 +56,80 @@
 		}
 	}
 
-	//config should be dim3 ths(16,2)
-	__device__ void cal_indx_2(){
+	__device__ void bitonic_merge(bool up, volatile int * data,int id, int n){
+		if ( n <1 ) return ;
+		int n2 = n >> 1;
 
+		syncthreads();
+		if  ((data[id] > data[id + n]) ^ up ){
+			int t = data[id];
+			data[id] = data[id+n];
+			data[id+n] = t;
+		}
+		//syncthreads();
+		// change part of the thread
+		if ( id >= n2 )
+			id -= n2,data += n;
+		bitonic_merge(up, data,id, n2);
+	}
+
+	//config should be dim3 ths(16,2)
+	__device__ void cal_indx_2(int parts,int part_size,int block_size,int block2_size,int indices_now){
+		int id = threadIdx.x;
+		int myside = threadIdx.y;
+		int opposite_side = !myside;
+		int idx = (id+1)*part_size-1;
+		int opposite_idx;
+		int *myList = list_p[indices_now][ myside ];
+		int *oppositeList = list_p[indices_now][ opposite_side ];
+
+
+		int myValue = myList[ idx ];
+
+		//printf("%d %d parts:%d\n",idx,myside,opposite_side);
+
+
+		int temp_len[] ={ block_size,block2_size };
+		//------ bsearch upper bound part----------
+		int left = 0,right = temp_len[opposite_side];
+		while ( left < right ){
+			int mid = (left + right + 1)/2;
+			if ( myValue < oppositeList[mid] )
+				right = mid - 1;
+			else left = mid;
+		}
+		//------ END bsearch upper bound part----------
+		opposite_idx = left + ( oppositeList[left] <= myValue ) - 1;
+
+		__shared__ volatile int shared[2][64];
+		__shared__ volatile int shared2[64];
+		shared[myside][ parts - id - 1 ] = idx; //reverse save
+		shared[opposite_side][ parts + id ] = opposite_idx;
+
+		syncthreads();
+		bitonic_merge(false,shared[myside],id,parts);
+		syncthreads();
+
+		partitions[indices_now][ id + 1 ][ myside ] = shared[myside][ id ];
+		partitions[indices_now][ id + parts + 1 ][ myside ] = shared[myside][ id + parts ];
+
+		//print out
+//		if ( !myside && !id ){
+//			FOR_I(0,parts*2){
+//				int a = shared[0][ i ];
+//				int b = shared[1][ i ];
+//				printf("[%d]:%d --- [%d]:%d\n",a,myList[a],b,oppositeList[b]);
+//			}
+//		}
 	}
 
 	__global__ void cal_indx (int block_size,int block_2_size,int indices_now){
-		cal_indx_1(block_size,block_2_size,indices_now);
+		//cal_indx_1(block_size,block_2_size,indices_now);
+		int n = blockDim.x;
+		cal_indx_2(n,block_size/n,block_size,block_2_size,indices_now);
 	}
+
+
 
 	//special case for cal_indices
 	__global__ void move_indices(int len1,int len2,int block_size,int indices_now){

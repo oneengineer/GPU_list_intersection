@@ -130,6 +130,7 @@ __device__ int calculated_indices_len[QUEUE_SIZE][4];
 __device__ int swapped[QUEUE_SIZE];   // save swapped stage for each status
 __device__ int *_result;
 __device__ int _nm[2];
+__device__ int partitions[QUEUE_SIZE][128+4][2];
 
 	inline void move_pos(int &pos){
 		pos = (pos + 1) % QUEUE_SIZE;
@@ -269,11 +270,12 @@ __device__ int _nm[2];
 		cout<<"MY Algo cpu test: "<<cpuWatch.stop()<<endl;
 	}
 
+int cpuResultSize = 0;
 	int merge_algo(int *array1,int *array2, int begin1,int end1,int begin2,int end2){
 		//return ;
 		int i=begin1,j=begin2;
 		int lasti,lastj;
-		int cpuResultSize = 0;
+
 		lasti=array1[i];
 		lastj=array2[j];
 		while ( i<end1 && j<end2){
@@ -368,12 +370,77 @@ __device__ int _nm[2];
 	}
 #endif
 
+
+	__global__ void help_test_cal_indices(){
+		FOR_I(0,16){
+			printf("i: %d (%d %d)\n",i,partitions[0][i][0],partitions[0][i][1]);
+		}
+	}
+
+	__global__ void show_part(){
+		FOR_I(0,16)
+			printf("%d  [%d] -- [%d]\n",i,partitions[0][i][0],partitions[0][i][1]);
+
+	}
+
+	void test_cal_indices(){
+		n = 4 * 128;
+		generate_random(1.2,1.5,1.5);
+		//FOR_I(0,n) host_lists[0][i] =2*i ,host_lists[1][i] = i;
+		init_data(128);
+		init_device_variables();
+
+		int block_size = 128;
+//		debug_a(host_lists[0],block_size+10);
+//		debug_a(host_lists[1],block_size+10);
+
+
+		dim3 d(8,2);
+		cal_indx<<<1,d>>>(block_size,block_size,0);
+		cu_checkError();
+		//help_test_cal_indices<<<1,1>>>();
+		cu_checkError();
+		cudaDeviceSynchronize();
+
+		algo2_search<<<16,16>>>(devV[0],0,0);
+		cu_checkError();
+		cudaDeviceSynchronize();
+
+
+		cpuResultSize = 0;
+		merge_algo(host_lists[0],host_lists[1],0,128,0,128);
+//		cout<<"Cpu result"<<endl;debug_a(cpuResult,cpuResultSize);//debug
+		resultList = new int [200];
+
+		cudaMemcpy(resultList,devV[0],sizeof(int)*128,D_T_H);
+		int num_dev = 0;
+		FOR_I(0,128)
+			if (resultList[i]){
+//				printf("[%d] %d\t",i,host_lists[0][i]);
+				resultList[num_dev++] = host_lists[0][i];
+			}printf("\n");
+
+		cout<<"Check Correctness"<<endl;
+
+		if (num_dev != cpuResultSize) { printf("Wrong num!");exit(1);}
+
+		FOR_I(0,cpuResultSize)
+			if (  resultList[i] != cpuResult[i] ){
+				printf("Wrong at [%d] %d %d",i,resultList[i],cpuResult[i]);
+				exit(1);
+			}
+		cout<<"It is correct"<<endl;
+	}
+
 int main(){
 
-	prepare_data(1024*1024*40);
-
-//	test_scan_save();
-//	return 0;
+	prepare_data(1024*40);
+	FOR_I(0,100){
+		srand(i);
+		test_cal_indices();
+		cu_checkError();
+	}
+	return 0;
 
 	FOR_I(103,10000){
 	//r =1344532745 ;
