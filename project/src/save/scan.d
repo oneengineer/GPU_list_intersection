@@ -100,6 +100,7 @@ src/save/scan.o : ../src/save/scan.cu \
     /usr/local/cuda/bin/../include/device_launch_parameters.h \
     ../src/save/scan.cuh \
     ../src/save/../common_defines.h \
+    /usr/include/c++/4.4/cstdio \
     /usr/include/c++/4.4/iostream \
     /usr/include/c++/4.4/ostream \
     /usr/include/c++/4.4/ios \
@@ -170,5 +171,4 @@ src/save/scan.o : ../src/save/scan.cu \
     /usr/include/c++/4.4/bits/basic_ios.tcc \
     /usr/include/c++/4.4/bits/ostream.tcc \
     /usr/include/c++/4.4/istream \
-    /usr/include/c++/4.4/bits/istream.tcc \
-    /usr/include/c++/4.4/cstdio
+    /usr/include/c++/4.4/bits/istream.tcc

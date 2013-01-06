@@ -10,6 +10,7 @@
 
 
 void generate_random(double alpha=1.0,double scala1=1.0,double scala2=1.0);
+void generate_same(double scala);
 void generate_case2();
 void generate_case3();
 void generate_case4();

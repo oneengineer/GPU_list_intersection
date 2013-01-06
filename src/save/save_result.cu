@@ -31,6 +31,7 @@ extern cudaStream_t *scan_stream;
 
 		if ( V[id] - V[id-1] > 0 ){
 			_result[ V[id-1]+partial_addup ] = L1[ id ];
+			//printf("in block_update_and_save (id:%d) %d is saved at [%d]\n",id,L1[ id ],V[id-1]+partial_addup);//debug
 		}
 	}
 

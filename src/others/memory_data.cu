@@ -8,24 +8,30 @@
 		int *temp = new int [sizeV];
 		FOR_I(0,sizeV) temp[i] = 0;
 
-		cudaMalloc( (void **)&devL1, sizeof(int)*n );
-		cudaMalloc( (void **)&devL2, sizeof(int)*m );
+		cudaMalloc( (void **)&devL1, sizeof(int)*(n+block_size) );
+		cudaMalloc( (void **)&devL2, sizeof(int)*(m+block_size) );
 		cudaMalloc( (void **)&(devV[0]), sizeof(int)*sizeV );
 		cudaMalloc( (void **)&(devV[1]), sizeof(int)*sizeV );
 		cudaMalloc( (void **)&(devV[2]), sizeof(int)*sizeV );
-		cudaMalloc( (void **)&devResult, sizeof(int)*n );
-		cudaMalloc( (void **)&devMark, sizeof(int)*(n+1) );
+		cudaMalloc( (void **)&devResult, sizeof(int)*(n+block_size) );
+		cudaMalloc( (void **)&devMark, sizeof(int)*(n+block_size+1) );
 
-		cudaMemcpy( devL1,host_lists[0],sizeof(int)*n,H_T_D );
-		cudaMemcpy( devL2,host_lists[1],sizeof(int)*m,H_T_D );
+		cudaMemcpy( devL1,host_lists[0],sizeof(int)*(n+block_size),H_T_D );
+		cudaMemcpy( devL2,host_lists[1],sizeof(int)*(m+block_size),H_T_D );
 		cudaMemcpy( devMark,temp,sizeof(int),H_T_D );
 		cudaMemcpy( devV[0],temp,sizeof(int)*sizeV,H_T_D );
 		cudaMemcpy( devV[1],temp,sizeof(int)*sizeV,H_T_D );
 		cudaMemcpy( devV[2],temp,sizeof(int)*sizeV,H_T_D );
+
+		int max1 =  1<<31 - 2 - block_size;
+		FOR_I(0,block_size) temp[i] = max1+i;
+		cudaMemcpy((int *)(devL1+n),temp,sizeof(int)*block_size,H_T_D);
+		FOR_I(0,block_size) temp[i] = max1 -1 -block_size +i;
+		cudaMemcpy((int *)(devL2+m),temp,sizeof(int)*block_size,H_T_D);
+
 		devV[0] +=4; // memeory allign for cudpp
 		devV[1] +=4; // memeory allign for cudpp
 		devV[2] +=4; // memeory allign for cudpp
-
 	}
 
 

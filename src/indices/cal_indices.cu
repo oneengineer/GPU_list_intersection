@@ -83,11 +83,7 @@
 		int *myList = list_p[indices_now][ myside ];
 		int *oppositeList = list_p[indices_now][ opposite_side ];
 
-
 		int myValue = myList[ idx ];
-
-		//printf("%d %d parts:%d\n",idx,myside,opposite_side);
-
 
 		int temp_len[] ={ block_size,block2_size };
 		//------ bsearch upper bound part----------
@@ -101,8 +97,7 @@
 		//------ END bsearch upper bound part----------
 		opposite_idx = left + ( oppositeList[left] <= myValue ) - 1;
 
-		__shared__ volatile int shared[2][64];
-		__shared__ volatile int shared2[64];
+		__shared__ volatile int shared[2][256];
 		shared[myside][ parts - id - 1 ] = idx; //reverse save
 		shared[opposite_side][ parts + id ] = opposite_idx;
 
@@ -121,6 +116,27 @@
 //				printf("[%d]:%d --- [%d]:%d\n",a,myList[a],b,oppositeList[b]);
 //			}
 //		}
+
+		syncthreads();
+		int whole_id = blockDim.x * myside + id;
+		__shared__ volatile int shared_decide_next_addr[256+1];//default 0
+		shared_decide_next_addr[whole_id] = max( shared[0][whole_id], shared[1][whole_id] ) < block_size;
+		syncthreads();
+
+//		if ( !myside && !id ){
+//			FOR_I(0,parts*2+1) printf("[%d] %d\t",i,shared_decide_next_addr[i]);printf("\n");
+//		}
+
+		if (( whole_id == 2*parts - 1 && shared_decide_next_addr[ whole_id ] == 1 ) ||
+			( shared_decide_next_addr[ whole_id ] && !shared_decide_next_addr[whole_id+1] ) ){
+			int indices_next = (indices_now + 1) % QUEUE_SIZE;
+			list_p[indices_next][ 0 ] = list_p[indices_now][ 0 ] + shared[0][whole_id]+1;
+			list_p[indices_next][ 1 ] = list_p[indices_now][ 1 ] + shared[1][whole_id]+1;
+			calculated_indices_len[indices_now][0] =shared[0][whole_id];
+			calculated_indices_len[indices_now][1] =shared[1][whole_id];
+			//printf("End AT [%d] %d   [%d] %d\n",shared[0][whole_id],list_p[indices_next][0][-1],shared[1][whole_id],list_p[indices_next][1][-1]);//debug
+		}
+
 	}
 
 	__global__ void cal_indx (int block_size,int block_2_size,int indices_now){

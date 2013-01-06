@@ -144,14 +144,6 @@ cudaStream_t *scan_stream;
 		}
 	}
 
-	__global__ void help1(int *list,int size){
-		int maxid = -1;
-		FOR_I(0,size)
-			if (list[i])
-				maxid = i;
-		printf("max not zero V is %d\n",maxid);
-	}
-
 	void ScanSequence::run_large(){
 		int blocks = n / small_size;
 		scan_large<<<1,blocks,0,*scan_stream>>>(devL,scan_buffer+4,blocks,small_size);

@@ -31,6 +31,7 @@
 #define FOR(begin,end) FOR_I(begin,end)
 #define FORN(end) FOR_I(0,end)
 
+#define DEPLETED 0
 
 const int QUEUE_SIZE= 4;
 const int N = 50*1024*1024;
@@ -47,6 +48,6 @@ extern __device__ int calculated_indices_len[QUEUE_SIZE][4];
 extern __device__ int swapped[QUEUE_SIZE];   // save swapped stage for each status
 extern __device__ int *_result;
 extern __device__ int _nm[2];
-extern __device__ int partitions[QUEUE_SIZE][128+4][2];
+extern __device__ int partitions[QUEUE_SIZE][256+4][2];
 
 #endif

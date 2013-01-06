@@ -31,6 +31,29 @@ using namespace std;
 		sort(host_lists[1],host_lists[1]+m);
 	}
 
+	void generate_same(double scala){
+		printf("scala:%lf  and two LIST ARE THE SAME!\n",scala);//debug
+		int mod = n*4;
+		m = n;
+		int mod1 = (int)((double)mod*scala + eps);
+		generate_different(host_lists[0],n,mod1);
+		sort(host_lists[0],host_lists[0]+n);
+		memcpy(host_lists[1],host_lists[0],sizeof(int)*n);
+	}
+
+
+	void generate_save(double alpha,double scala1,double scala2){
+		printf("alpha:%lf  scala1:%lf  scala2:%lf\n",alpha,scala1,scala2);//debug
+		int mod = n*4;
+		m = (int)((double)n*alpha + eps);
+		int mod1 = (int)((double)mod*scala1 + eps);
+		int mod2 = (int)((double)mod*scala2 + eps);
+		generate_different(host_lists[0],n,mod1);
+		sort(host_lists[0],host_lists[0]+n);
+		generate_different(host_lists[1],m,mod2);
+		sort(host_lists[1],host_lists[1]+m);
+	}
+
 	void generate_case2(){
 		printf("a general test. mainly for the search bound\nPlease use D1 = D2 = 2,block2size = 5\n\n");
 		int temp1[] = {1,2,3,4,           20,            29, 34,36,37,38 ,39,30,66

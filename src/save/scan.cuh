@@ -6,6 +6,7 @@
  */
 
 #include "../common_defines.h"
+#include <cstdio>
 
 #ifndef SCAN_CUH_
 #define SCAN_CUH_
@@ -22,6 +23,8 @@ void init_scan(cudaStream_t * ,int );
 
 __global__ void scan_x(int *array,int small_size);
 
+extern void cu_host_print(int *list,int size);
+
 struct ScanSequence{
 
 	int steps;
@@ -30,6 +33,7 @@ struct ScanSequence{
 	int save_indices_now;
 
 	ScanSequence(int steps,int *devL,int n):steps(steps),devL(devL),n(n){
+		//! small_size AT LEAST 64
 		small_size = 1024;
 	}
 
@@ -47,6 +51,8 @@ struct ScanSequence{
 	void set(int *devL,int save_indices_now){
 		this->devL = devL;this->save_indices_now=save_indices_now;
 	}
+
+
 
 	void run_all(){
 		FOR_I(0,steps) run_scan(i);
