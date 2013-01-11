@@ -33,8 +33,6 @@
 
 #include "others/generate_data.h"
 
-//#include "cudpp.h"
-
 
 using namespace std;
 
@@ -131,71 +129,11 @@ __device__ int *list_p[QUEUE_SIZE][2]; // save the starting position of either l
 __device__ int calculated_indices_len[QUEUE_SIZE][4];
 __device__ int swapped[QUEUE_SIZE];   // save swapped stage for each status
 __device__ int *_result;
-__device__ int gpu_result_size;
 __device__ int _nm[2];
-__device__ int partitions[QUEUE_SIZE][256+4][2];
-__device__ partition_info partitions_info[QUEUE_SIZE][256+4];
+__device__ int partitions[QUEUE_SIZE][128+4][2];
 
 	inline void move_pos(int &pos){
 		pos = (pos + 1) % QUEUE_SIZE;
-	}
-
-//	CUDPPHandle prepare_prefixsum(int size, cudaStream_t * stream){
-//		CUDPPConfiguration config;
-//		config.op = CUDPP_ADD;
-//		config.datatype = CUDPP_INT;
-//		config.algorithm = CUDPP_SCAN;
-//		config.options = CUDPP_OPTION_FORWARD | CUDPP_OPTION_INCLUSIVE;
-//		config.mystream = stream;
-//
-//		CUDPPHandle theCudpp;
-//		cudppCreate(&theCudpp);
-//		CUDPPHandle scanplan = 0;
-//		CUDPPResult res = cudppPlan(theCudpp,&scanplan,config,size,1,0);
-//		if ( CUDPP_SUCCESS != res ){
-//			printf("ERROR in prepare_prefixsum\n");
-//			exit(-1);
-//		}
-//		return scanplan;
-//	}
-
-	__global__ void save_one_core(int search_now,int *devV){
-		int num = 0;
-		int len = calculated_indices_len[search_now][0];
-		FOR_I(0,len+1)
-			if ( devV[i] ){
-				_result[ num++ ] = list_p[search_now][0][i];
-				//printf("in save : saved :%d\n",list_p[search_now][0][i]);//debug
-			}
-		_result += num;
-	}
-
-	__global__ void help_show_partation(int indices_now,int num_part,bool printout=false){
-		FOR_I(0,num_part){
-			struct partition_info *info = &partitions_info[indices_now][i];
-			printf("Partation: %d\n",i);
-			printf("[%llx]: %d --- [%llx]:%d\n",info->addr,*(info->addr),info->opposite_addr,*(info->opposite_addr));
-			if (printout){
-				FOR_I(0,info->len*4) printf("%d \t",info->addr[i]);
-				printf("\n |||||||| \n");
-				int xx= info->right + (3- info->right%4)%4 +1;
-				FOR_I(0, xx) printf("%d \t",info->opposite_addr[i]);
-				//FOR_I(info->left,info->right+1) printf("%d \t",info->opposite_addr[i]);
-				printf("\n");
-			}
-			printf("len:%d \t left:%d\t right:%d \t B2A:%d\n",info->len,info->left,info->right,info->B2A);
-		}
-	}
-
-	__global__ void back__result(){
-		_result += gpu_result_size;
-	}
-
-	__global__ void show_addr_value(int *devL,int n){
-		FOR_I(0,n){
-			printf("[%llx]: %d \t",devL+i,devL[i]);
-		}
-		printf("\n");
 	}
 
 	void work(){
@@ -211,11 +149,12 @@ __device__ partition_info partitions_info[QUEUE_SIZE][256+4];
 		int block_size;
 		int block_2_size;
 		//------ some settings ----------
+		D1 = 256;
 		D1save = 16;
-		D1 = 128;D2 = 512;
-
-		D1 = 16;D2 = 64;
-		//D1 = 2;D2 = 4;
+		D2 = 512;
+		//D1 = 32;
+		//D2 = 32;
+		//D1save = 8;
 
 		int save_stream = 2;
 		int search_stream = 1;
@@ -227,7 +166,7 @@ __device__ partition_info partitions_info[QUEUE_SIZE][256+4];
 		init_data(block_size);
 		init_device_variables();
 		init_scan(&streams[save_stream],1024);
-		ScanSequence scanSeq(1,devV[0],block_size);
+		ScanSequence scanSeq(2,devV[0],block_size);
 		scanSeq.init();
 
 		SearchSettingQueue searchQue(2,&(streams[search_stream]));
@@ -235,21 +174,14 @@ __device__ partition_info partitions_info[QUEUE_SIZE][256+4];
 		int searchConfig8[][2] = { {32,512},{32,512},{32,512},{32,512},{32,512},{32,512},{32,512},{32,512} };
 		int searchConfig1[][2] = { {256,512}};
 		int searchConfig2[][2] = { {128,512},{128,512}};
-		int searchConfig_small[][2] = { {1,16}};
 		searchQue.setSettings(searchConfig2);
 		searchQue.init();
 		outln(searchQue.length());
 
-		int num_small_block = D1;
-		dim3 cal_indx_setting(num_small_block,2);
 
 		CudaWatch cudawatch;
 		Watch cpuWatch;cpuWatch.start();
 		cudawatch.start();
-
-		//CUDPPHandle prefixsum_plan = prepare_prefixsum(block_size,streams+2);
-		//show_addr_value<<<1,1>>>(devL1,n);
-		//show_addr_value<<<1,1>>>(devL2,m);
 
 		int len1,len2;
 		int cal_pos = 0, search_pos = 0, save_pos  =0; // they are for L1, L2 position
@@ -259,56 +191,88 @@ __device__ partition_info partitions_info[QUEUE_SIZE][256+4];
 			cu_checkError();
 			outln(len1);outln(len2);//debug
 			if ( len1<=0 || len2 <= 0 ) break;
-			int loops = min(len1,len2)/block_size;
-			if ( min(len1,len2) % block_size != 0 )
-				loops ++;
-
+			int loops = min(len1,len2)/block_2_size;
 			if ( loops >0 ){
 				outln(loops);
 				bool lastButOne = loops > 1;
 				int *saveV; //pointer of saving result
 
-				//-- stage middle
-				for ( ;loops> 0 ;loops -- ){
-					outline;outline;outln(loops);
-					saveV = devV[ devVinc];
-					cal_indx<<<1,cal_indx_setting>>>( block_size,block_2_size,cal_pos);
-					//cudaDeviceSynchronize();
-					//if ( 2 == loops )
-					help_show_partation<<<1,1>>>(cal_pos,4,true);//debug
-					//cudaDeviceSynchronize();
-					algo2_search<<< 2 * D1 , D2/4 >>>(saveV,search_pos,0);
-					//cu_host_print(saveV,block_size);//debug
-					//save_one_core<<<1,1>>>(search_pos,devV[0]);
-					//scanSeq.set(saveV,save_pos);
-					//scanSeq.run_all();
-					//cu_host_print(saveV,block_size);//debug
+				//-- stage 1
+				cal_indx<<<1,4,0,streams[0]>>>(block_size,block_2_size,cal_pos);
+				move_pos( cal_pos );
 
-					//cu_checkError();
-//					if ( loops < 10)
-//						help_show1<<<1,1>>>(save_pos);
-					move_pos(cal_pos);move_pos(search_pos);move_pos(save_pos);
-
-
-					//mssleep(10);
-					cudaDeviceSynchronize();
-					//back__result<<<1,1>>>();return;
+				//-- stage 2
+				if ( lastButOne ){
+					cal_indx<<<1,4,0,streams[0]>>>(block_size,block_2_size,cal_pos);
+					searchQue.set(devV[devVinc],search_pos);
+					searchQue.run_all();
+					move_pos( cal_pos );move_pos( search_pos );
 				}
-				//break;//debug
 				cudaDeviceSynchronize();
-			}
 
+				//-- stage middle
+				for ( loops -= 2; loops> 0 ;loops -- ){
+					//outln(loops);
+					saveV = devV[ devVinc];devVinc = (devVinc+1) % 3;
+					scanSeq.set(saveV,save_pos);searchQue.set(devV[devVinc],search_pos);
+
+
+					scanSeq.run_scan(0);
+					searchQue.run_search(0);
+					scanSeq.run_scan(1);
+					scanSeq.run_large();
+					cal_indx<<<1,4,0,streams[0]>>>(block_size,block_2_size,cal_pos);
+					scanSeq.run_save(0);
+					searchQue.run_search(1);
+					scanSeq.run_save(1);
+					scanSeq.run_saveLarge();
+
+
+//					scanSeq.run_all();
+//					searchQue.run_all();
+
+
+					move_pos( cal_pos );move_pos( search_pos );move_pos( save_pos );
+					cu_checkError();
+					//mssleep(10);
+				}
+				cudaDeviceSynchronize();
+				//-- stage last but one
+				if (lastButOne){
+					saveV = devV[ devVinc];devVinc = (devVinc+1) % 3;
+					scanSeq.set(saveV,save_pos);
+					scanSeq.run_all();
+					move_pos( save_pos );
+				}
+				searchQue.set(devV[devVinc],search_pos);
+				searchQue.run_all();
+				move_pos( search_pos );
+				cudaDeviceSynchronize();
+				//----- stage last --------
+				saveV = devV[ devVinc];devVinc = (devVinc+1) % 3;
+				scanSeq.set(saveV,save_pos);
+				scanSeq.run_all();
+				move_pos( save_pos );
+			}
+			else {
+				cout<<"small seg "<<len1<<" "<<len2<<endl;
+				move_indices<<<1,1,0,streams[save_stream]>>>(len1,len2,block_size,cal_pos);
+				searchQue.set(devV[0],search_pos);
+				searchQue.run_all();
+				scanSeq.set( devV[0] ,save_pos);
+				scanSeq.run_all();
+				move_pos(cal_pos);move_pos(search_pos);move_pos(save_pos);
+			}
 			cu_checkError();
 		}
 		cudaDeviceSynchronize();
-		back__result<<<1,1>>>();
 		cout<<"MY Algo:"<<cudawatch.stop()/1000.0<<endl;
 		cout<<"MY Algo cpu test: "<<cpuWatch.stop()<<endl;
 	}
 
 int cpuResultSize = 0;
 	int merge_algo(int *array1,int *array2, int begin1,int end1,int begin2,int end2){
-		cpuResultSize = 0;
+		//return ;
 		int i=begin1,j=begin2;
 		int lasti,lastj;
 
@@ -469,39 +433,29 @@ int cpuResultSize = 0;
 
 #endif
 
+int main(){
+
+	prepare_data(1024*1024*40);
 
 
-int main(int arg_num,char ** args){
-
-
-	prepare_data(1024*1024*50);
-
-
-	FOR_I(155,10000){
-		if ( arg_num >1 ){
-			int read_seed = 2;
-			sscanf(args[1],"%d",&read_seed);
-			srand(read_seed);
-			printf("READ SEED:%d\n",read_seed);
-		}
-		else srand(i);
-		//srand(699214);
-	//n = 1024*1024*40;
-	//n = 1024*102;
-	n = 1024*10;
-	//n = 66;
-	//n = 20;
+	FOR_I(103,10000){
+	//r =1344532745 ;
+	srand(i);
+	n = 1024*1024*40;
+	//n = 1024*1024;
+	//n = 50;
 
 	//generate_case5();
-	generate_random(1.0,1.0,1.0);
-	//n = m = 70;
-	//host_lists[1][16] = 65;
-	//generate_same(2.0);
+	generate_random(1.0,2.0,2.0);
+
+//	FOR_I(0,n){ if ( 7592 == host_lists[1][i] ) printf("7592 = [%d]\n",i);
+//	if ( 962329 == host_lists[1][i] ) printf("962329 = [%d]\n",i);
+//	}
 
 	cout<<"generate data over srand("<<i<<") n="<<n<<" m="<<m<<endl;
-	debug_a(host_lists[0],n);debug_a(host_lists[1],m);//debug
 	printf("List 1 ( %d --- %d --- %d )\n",host_lists[0][0],host_lists[0][n/2],host_lists[0][n-1]);
 	printf("List 2 ( %d --- %d --- %d )\n",host_lists[1][0],host_lists[1][m/2],host_lists[1][m-1]);
+
 
 	Watch watch;watch.start();
 	int cpuResultSize = merge_algo(host_lists[0],host_lists[1],0,n,0,m);
@@ -516,11 +470,11 @@ int main(int arg_num,char ** args){
 	cu_checkError();
 	free_device_memory();
 	printf(" results / elements = %d / %d %lf\n",Lresult,n,(1.0*Lresult)/(1.0*n));
-
-	sort(resultList,resultList + Lresult);
 	outln(Lresult);outln(cpuResultSize);
+
+	//outln(Lresult);outln(cpuResultSize);
 	//debug_a(resultList,Lresult);
-	debug_a(cpuResult,cpuResultSize);
+	//debug_a(cpuResult,cpuResultSize);
 	//break;
 
 	//continue;// DO NOT CHECK correctness
@@ -529,7 +483,7 @@ int main(int arg_num,char ** args){
 	if  ( (error_index = check_correctness(cpuResultSize)) >=0 ){
 		outline;
 		outln(i);
-		printf("all length: cpu:%d gpu:%d  ration: %.5lf\n",cpuResultSize,Lresult,100.0*error_index/(1.0*Lresult));
+		printf("all length: cpu:%d gpu:%d  ration: %.5lf\n",cpuResultSize,Lresult,100.0*i/(1.0*Lresult));
 		break;
 	}
 		outline;

@@ -153,8 +153,8 @@
 	/**
 	 *
 	 * To write the program use minimum command
-	 * Three things to decide the next position:
-	 * 1. position? out of boundary?
+	 * Three things decide the next position:
+	 * 1. position out of boundary?
 	 * 2. get value, direction? change or not?
 	 * 3. length? how l
 	 * L: position = what
@@ -166,7 +166,7 @@
 	 *
 	 */
 
-	__device__ int gallop_search (int value,int & pos2,int *list,int left,int right){
+	inline __device__ int gallop_search (int value,int & pos2,volatile int *list,int left,int right){
 
 		int pos = pos2;
 		int result = 0;
@@ -204,11 +204,115 @@
 		return result;
 	}
 
+	inline __device__ int binary_search0(int value,int & pos,volatile int *list,int left,int right){
+		int result = 0;
+		while ( left <= right ){
+			pos = (left + right)/2;
+			if ( value == list[ pos ] ){
+				//printf("block:%d thread: %d INTERSECTION %d\n",blockIdx.x,threadIdx.x,value);
+				result = 1;
+				break;
+			}
+			else if ( list[pos] < value )
+				left = pos + 1;
+			else right = pos - 1;
+		}
+		return result;
+	}
+
+	inline __device__ int binary_search(int value,int & pos,volatile int *list,int left,int right){
+		int result = 0;
+		while ( left <= right ){
+			if ( value == list[ pos ] ){
+				//printf("block:%d thread: %d INTERSECTION %d\n",blockIdx.x,threadIdx.x,value);
+				result = 1;
+				break;
+			}
+			else if ( list[pos] < value )
+				left = pos + 1;
+			else right = pos - 1;
+			pos = (left + right)/2;
+		}
+		return result;
+	}
+
 	/*
 	 * because the search_2 is done in one SM in GPU, no divergence occur
 	 * begin and end are assigned from blockIdx, one block only have on value => no divergence
 	 *
 	 */
+
+	inline __device__ int search_one_value(int value,int pos,volatile int *opposite_addr,int left,int right){
+
+		int result = binary_search(value,pos,opposite_addr,left,right);
+		printf("<%d,%d>search %d in (%d %d) to %d\n",blockIdx.x,threadIdx.x,value,left,right,pos);//debug
+
+		if (result){
+			int write_pos = atomicAdd(&gpu_result_size,1);
+			_result[write_pos] = value;
+		}
+
+		if (result)
+		printf("B<%d> %d was found at [%d]\n",blockIdx.x,value,pos);
+
+		return pos;
+	}
+
+	inline __device__ void search_in_block(int * V,int search_now,const struct partition_info &info){
+		int id = threadIdx.x;
+		// begin and end is closed interval [begin , end]
+
+		int *list1 ;
+		int *list2 ;
+
+		if (id > info.right) return;
+
+		uint4 myvalue ;
+
+		//value = info.addr[id];
+		//printf("(%d,%d) value:%d\n",blockIdx.x,id,value);
+
+		volatile __shared__ int opposite_list[1024*4];
+		myvalue = ((uint4 *)info.opposite_addr)[id];
+
+		((uint4 *)opposite_list)[id] = myvalue;
+
+
+		if ( id >= info.len ) return; // len inclusive
+		myvalue = ((uint4 *)info.addr)[id];
+
+		volatile __shared__ int shared_range[2048];// only use once, the right most thread does not use it
+		syncthreads();
+
+		int result = 0;
+		int pos = id;
+
+		int pos_A,pos_C,pos_D;
+		pos_A = search_one_value(myvalue.x,pos,opposite_list,info.left,info.right);
+		shared_range[id] = pos_A;
+		syncthreads();
+		int id_addone = id + 1;
+		if ( id_addone != info.len )
+			pos_D = shared_range[id_addone];
+		else pos_D = info.right;
+
+		pos = (pos_A + pos_D) /2 ;
+		pos_C = search_one_value(myvalue.z,pos,opposite_list,pos_A,pos_D);
+		pos = (pos_A + pos_C) /2 ;
+		search_one_value(myvalue.y,pos,opposite_list,pos_A,pos_C);
+		pos = (pos_C + pos_D) /2 ;
+		search_one_value(myvalue.w,pos,opposite_list,pos_C,pos_D);
+	}
+
+	__global__ void algo2_search(int * V,int search_now,int offset){
+		int id = threadIdx.x;
+		if (partitions_info[search_now][blockIdx.x].len>0){
+			search_in_block(V,search_now,partitions_info[search_now][ blockIdx.x ]);
+		}
+		//else if (!id) printf("BLOCK %d GIVE UP\n",blockIdx.x);
+	}
+
+#if DEPLETED
 
 	template<bool use1>
 	__device__ void search_2(int * V,int search_now,int offset,int begin1,int end1,int begin2,int end2){
@@ -219,7 +323,7 @@
 		int *list2 ;
 		int value;
 
-		__shared__ int opposite_list[2048];
+		volatile __shared__ int opposite_list[2048];
 
 		int left(0),right;
 		if ( use1 ){
@@ -251,23 +355,10 @@
 //					blockIdx.x,use1,end1-begin1,end2 - begin2,list_p[ search_now ][ 0 ][end1],list_p[ search_now ][ 1 ][end2]);//debug
 
 
-
 		int result = 0;
-//		int mid = left;
-//
-//		while ( left <= right ){
-//			mid = (left + right)/2;
-//			if ( value == opposite_list[ mid ] ){
-//				//printf("block:%d thread: %d INTERSECTION %d\n",blockIdx.x,threadIdx.x,value);
-//				result = 1;
-//				break;
-//			}
-//			else if ( opposite_list[mid] < value )
-//				left = mid + 1;
-//			else right = mid - 1;
-//		}
 		int pos = id;
-		result = gallop_search(value,pos,opposite_list,0,right);
+		//result = binary_search(value,pos,opposite_list,left,right);
+		result = gallop_search(value,pos,opposite_list,left,right);
 
 
 		if (use1){
@@ -301,6 +392,7 @@
 			search_2<false>(V,search_now,offset,begin1,end1,begin2,end2);
 		}
 	}
+#endif
 
 
 
