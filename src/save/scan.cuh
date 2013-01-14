@@ -11,11 +11,7 @@
 #ifndef SCAN_CUH_
 #define SCAN_CUH_
 
-#define WARP_SIZE 32
-#define LOG_WARP_SIZE 5
-#define LOG_HALFWARP_SIZE 4
-#define SCAN_BLOCK_SIZE 1024
-#define LOG_SCAN_BLOCK_SIZE 10
+
 
 void scan(int *,int );
 void scan2(int *,int );

@@ -32,7 +32,6 @@ src/others/bsearch.o : ../src/others/bsearch.cu \
     /usr/local/cuda/bin/../include/common_functions.h \
     /usr/include/string.h \
     /usr/include/xlocale.h \
-    /usr/include/bits/string3.h \
     /usr/include/time.h \
     /usr/include/bits/time.h \
     /usr/include/bits/types.h \
@@ -49,8 +48,6 @@ src/others/bsearch.o : ../src/others/bsearch.cu \
     /usr/include/wchar.h \
     /usr/lib/gcc/x86_64-linux-gnu/4.4.3/include/stdarg.h \
     /usr/include/bits/sys_errlist.h \
-    /usr/include/bits/stdio.h \
-    /usr/include/bits/stdio2.h \
     /usr/include/stdlib.h \
     /usr/include/bits/waitflags.h \
     /usr/include/bits/waitstatus.h \
@@ -64,7 +61,6 @@ src/others/bsearch.o : ../src/others/bsearch.cu \
     /usr/include/sys/sysmacros.h \
     /usr/include/bits/pthreadtypes.h \
     /usr/include/alloca.h \
-    /usr/include/bits/stdlib.h \
     /usr/include/assert.h \
     /usr/local/cuda/bin/../include/math_functions.h \
     /usr/include/math.h \
@@ -75,7 +71,6 @@ src/others/bsearch.o : ../src/others/bsearch.cu \
     /usr/include/bits/nan.h \
     /usr/include/bits/mathdef.h \
     /usr/include/bits/mathcalls.h \
-    /usr/include/bits/mathinline.h \
     /usr/include/c++/4.4/cmath \
     /usr/include/c++/4.4/bits/cpp_type_traits.h \
     /usr/include/c++/4.4/ext/type_traits.h \

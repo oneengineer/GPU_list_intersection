@@ -66,7 +66,6 @@
 			data[id] = data[id+n];
 			data[id+n] = t;
 		}
-		//syncthreads();
 		// change part of the thread
 		if ( id >= n2 )
 			id -= n2,data += n;
@@ -79,6 +78,10 @@
 #define ALIGN_ADDR_MUL (4*ALIGN_MUL-1) // int = 4 byte
 #define ALIGN_MOD (ALIGN_MUL-1)
 
+
+	inline __device__ int complement(int value,int mod){
+		return (mod - ( value &mod) )& mod;
+	}
 
 	/*
 	 * begin ,end : the data range. may larger than the calculation needs
@@ -96,21 +99,31 @@
 //		printf("vof1: %d vof2: %d\n",*addr1,*addr2);
 //		printf("[ %llx  %llx ] of1: %d of2: %d\n",addr1,addr2,offset1,offset2);
 
+
+
 		left1 = begin1 & ALIGN_MOD;
 		left2 = begin2 & ALIGN_MOD; // === %4 for the memory alignment
-		right1 = (ALIGN_MOD - ( end1 &ALIGN_MOD) )&ALIGN_MOD;
-		right2 = (ALIGN_MOD - ( end2 &ALIGN_MOD) )&ALIGN_MOD;
+		right1 = complement(end1,ALIGN_MOD);
+		right2 = complement(end2,ALIGN_MOD);
 		begin1 -= left1,begin2 -=left2;
 		end1 += right1,end2 += right2; // === %4 for the memory alignment
 
 		len1 = end1 - begin1,len2 = end2 - begin2;
 		right1 = len1 - right1,right2 = len2 - right2;
 
-		//printf("(id %d,%d) %d %d | %d %d\n",threadIdx.y,threadIdx.x,begin1,end1,begin2,end2);
-		//printf("(id %d,%d) %d %d <> %d %d\n",threadIdx.y,threadIdx.x,left1,right1,left2,right2);
+		if ( (len1+1) % 4!=0 || (len2+1) %4 !=0 ) printf("!!wrong\n");
+		if ( begin1 < 0 || begin2 < 0) printf("!!wrong\n");
+
 	}
 
-	__device__ void cal_indx_2(int parts,int part_size,int block_size,int block2_size,int indices_now){
+	__device__ bool monotone_check(int *list,int n){
+		FOR_I(1,n)
+				if ( !(list[i-1] <= list[i]) )
+					return false;
+		return true;
+	}
+
+	__device__ void cal_indx_2(int parts,int part_size,int block_size,int indices_now){
 		int id = threadIdx.x;
 		int myside = threadIdx.y;
 		int opposite_side = !myside;
@@ -121,9 +134,8 @@
 
 		int myValue = myList[ idx ];
 
-		int temp_len[] ={ block_size,block2_size };
 		//------ bsearch upper bound part----------
-		int left = 0,right = temp_len[opposite_side];
+		int left = 0,right = block_size;
 		//TODO the logical might be wrong
 		while ( left < right ){
 			int mid = (left + right + 1)/2;
@@ -136,7 +148,7 @@
 		//------ END bsearch upper bound part----------
 		opposite_idx = left + ( oppositeList[left] <= myValue ) - 1;
 
-		__shared__ volatile int shared[2][256];
+		__shared__ volatile int shared[2][1024+1];
 		shared[myside][ parts - id - 1 ] = idx; //reverse save
 		shared[opposite_side][ parts + id ] = opposite_idx;
 
@@ -144,7 +156,11 @@
 		bitonic_merge(false,shared[myside],id,parts);
 		syncthreads();
 
+		if (!id && !monotone_check( (int *)(shared[myside]),parts*2))
+			printf("WRONG!!");
+
 		//debug print out
+		if ( 12 == debug1.num_loop )
 		if ( !myside && !id ){
 			printf("[%d]:%d ==== [%d]:%d\n",0,myList[0],0,oppositeList[0]);
 			FOR_I(0,parts*2){
@@ -156,7 +172,7 @@
 
 		syncthreads();
 		int whole_id = blockDim.x * myside + id;
-		__shared__ volatile int shared_decide_next_addr[256+1];//default may be not 0!!
+		__shared__ volatile int shared_decide_next_addr[1024+1];//default may be not 0!!
 		shared_decide_next_addr[whole_id] = max( shared[0][whole_id], shared[1][whole_id] ) < block_size;
 		syncthreads();
 		int indices_next = (indices_now + 1) % QUEUE_SIZE;
@@ -181,7 +197,7 @@
 
 
 		if ( 0 == shared_decide_next_addr[whole_id] ){
-			len1 = len2 = -99;//do not do calculation
+			len1 = len2 = -999;//do not do calculation
 		}
 		struct partition_info *info = & partitions_info[indices_now][whole_id];
 		if ( len1 <= len2 ){
@@ -192,6 +208,7 @@
 			info->left = left2;
 			info->right = right2;
 			info->len = (len1+1)>>2;
+			info->len_opposite = (len2+1)>>2;
 		}
 		else{
 			// B ---> A
@@ -201,19 +218,24 @@
 			info->left = left1;
 			info->right = right1;
 			info->len = (len2+1)>>2;
+			info->len_opposite = (len1+1)>>2;
 		}
+		info->warp_len = complement(info->len-1,WARP_SIZE) + (info->len-1)&(0xFFFFFF20);
 
+		syncthreads();
 		if (( whole_id == 2*parts - 1 && shared_decide_next_addr[ whole_id ] == 1 ) ||
 			( shared_decide_next_addr[ whole_id ] && !shared_decide_next_addr[whole_id+1] ) ){
 			int begin_new1 = (shared[0][whole_id]+1 )& ALIGN_MOD;
 			int begin_new2 = (shared[1][whole_id]+1 )& ALIGN_MOD;
+			swapped[ indices_next ] = 0;
+			swapped[ indices_now ] = 0;
 
 			list_p[indices_next][ 0 ] = list_p[indices_now][ 0 ] + shared[0][whole_id]+1 - begin_new1;
 			list_p[indices_next][ 1 ] = list_p[indices_now][ 1 ] + shared[1][whole_id]+1 - begin_new2;
 			calculated_indices_len[indices_next][0] = begin_new1; //changed meaning
 			calculated_indices_len[indices_next][1] = begin_new2; //changed meaning
 
-			printf("Next real start: [%d]:%d [%d]:%d\n",begin_new1,list_p[indices_next][0][begin_new1],begin_new2,list_p[indices_next][1][begin_new2]);
+			//printf("Next real start: [%d]:%d [%d]:%d\n",begin_new1,list_p[indices_next][0][begin_new1],begin_new2,list_p[indices_next][1][begin_new2]);
 		}
 
 	}
@@ -221,7 +243,7 @@
 	__global__ void cal_indx (int block_size,int block_2_size,int indices_now){
 		//cal_indx_1(block_size,block_2_size,indices_now);
 		int n = blockDim.x;
-		cal_indx_2(n,block_size/n,block_size,block_2_size,indices_now);
+		cal_indx_2(n,block_size/n,block_size,indices_now);
 	}
 
 

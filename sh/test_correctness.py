@@ -7,13 +7,18 @@ import random
 
 exepath = "../project/list_intersection"
 
+logfile = "./test_check.log"
+
 
 def test_one(srand):
-	proc = subprocess.Popen([exepath,str(srand)],stdout = subprocess.PIPE)
-	
-	text = "\n".join(proc.stdout)
+	print "testing..... %d" % (srand)
+	f1 = open(logfile,mode="w")
+	proc = subprocess.Popen([exepath,str(srand)],shell=True,stdout=f1)
 	
 	return_code = proc.wait()
+
+	text = " ".join(open(logfile).readlines())
+
 	pattern ='(?P<value>\d+) was found at'
 	
 	result = re.findall(pattern,text,re.IGNORECASE)
@@ -36,15 +41,17 @@ def test_one(srand):
 	a1 = "".join(map( lambda x:str(x),result));
 	if a0 != a1:
 		print "WRONG! AT %d" % (srand)
-		return
 		for i in range(len(result)):
 			if cpu_result[i] != result[i]:
 				print "wrong at [%d] %d  cpu:%d" % (i,cpu_result[i],result[i])
+		return False
+	return True
 
 
 def work():
 	for i in range(10000):
 		s = random.randint(10,1000000)
-		test_one(s)
+		if not test_one(s):
+			break
 
 work()

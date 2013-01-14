@@ -20,8 +20,8 @@ OBJS += \
 src/save/%.o: ../src/save/%.cu
 	@echo 'Building file: $<'
 	@echo 'Invoking: NVCC Compiler'
-	nvcc -O3 -gencode arch=compute_20,code=sm_20 -odir "src/save" -M -o "$(@:%.o=%.d)" "$<"
-	nvcc --relocatable-device-code=true --compile -O3 -gencode arch=compute_20,code=compute_20 -gencode arch=compute_20,code=sm_20  -x cu -o  "$@" "$<"
+	nvcc -O0 -gencode arch=compute_20,code=sm_20 -odir "src/save" -M -o "$(@:%.o=%.d)" "$<"
+	nvcc --relocatable-device-code=true --compile -O0 -gencode arch=compute_20,code=compute_20 -gencode arch=compute_20,code=sm_20  -x cu -o  "$@" "$<"
 	@echo 'Finished building: $<'
 	@echo ' '
 

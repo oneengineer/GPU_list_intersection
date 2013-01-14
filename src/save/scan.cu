@@ -9,6 +9,41 @@ int SCAN_SMALL_SIZE = 2048;
 
 cudaStream_t *scan_stream;
 
+//	template<int loops,bool exclusive>
+//	inline __device__ void scan_warp_neet(volatile int * shared,int value,int id){
+//		shared[id] = 0;
+//		id += WARP_SIZE;
+//		shared[id] = value;
+//
+//		if ( 1 <= loops ) shared[id] += shared[id - 1];
+//		if ( 2 <= loops ) shared[id] += shared[id - 2];
+//		if ( 3 <= loops ) shared[id] += shared[id - 4];
+//		if ( 4 <= loops ) shared[id] += shared[id - 8];
+//		if ( 5 <= loops ) shared[id] += shared[id - 16];
+//
+//		if ( exclusive )
+//			shared[id] -= value;
+//	}
+//
+//	__device__ void scan_a_block_neat(int * src_data,volatile int shared[][WARP_SIZE*2]){
+//		int id = threadIdx.x;
+//		int local_id = id&(WARP_SIZE-1);
+//		int warp_num = id >> LOG_WARP_SIZE ;
+//		volatile __shared__ int shared_level2[WARP_SIZE*2];
+//
+//		scan_warp_neet< LOG_WARP_SIZE,false>(shared[warp_num],0,local_id );//basic level
+//		printf("<%d,%d>  warp_num:%d   local:%d\n",blockIdx.x,id,warp_num,local_id);//debug
+//		syncthreads();
+////		if ( id < 4){
+////			int myvalue = shared[id][WARP_SIZE+WARP_SIZE-1];
+////			scan_warp_neet<LOG_SCAN_BLOCK_SIZE - LOG_WARP_SIZE ,true>(shared_level2,myvalue,id);//second level, use calculated 32,in one block
+////		}
+//		syncthreads();
+//		//uniform update
+//		int a = shared_level2[ warp_num+WARP_SIZE ];
+//		//src_data[id] = shared[warp_num][ local_id + WARP_SIZE ] + a;
+//	}
+
 	__device__ void scan_one(int *array,int n){
 		int id = threadIdx.x;
 		int id2 = id;

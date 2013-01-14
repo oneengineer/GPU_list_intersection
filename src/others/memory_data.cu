@@ -4,7 +4,8 @@
 #include <cstdio>
 
 	void init_data(int block_size){
-		block_size += 4 + 1;
+		block_size += 4 + 1 + WARP_SIZE*4;
+		//block_size *= 16;
 		int sizeV = block_size + 10;
 		int *temp = new int [sizeV];
 		FOR_I(0,sizeV) temp[i] = 0;
@@ -15,16 +16,14 @@
 		cudaMalloc( (void **)&(devV[1]), sizeof(int)*sizeV );
 		cudaMalloc( (void **)&(devV[2]), sizeof(int)*sizeV );
 		cudaMalloc( (void **)&devResult, sizeof(int)*(n+block_size) );
-		cudaMalloc( (void **)&devMark, sizeof(int)*(n+block_size+1) );
 
-		cudaMemcpy( devL1,host_lists[0],sizeof(int)*(n+block_size),H_T_D );
-		cudaMemcpy( devL2,host_lists[1],sizeof(int)*(m+block_size),H_T_D );
-		cudaMemcpy( devMark,temp,sizeof(int),H_T_D );
+		cudaMemcpy( devL1,host_lists[0],sizeof(int)*(n),H_T_D );
+		cudaMemcpy( devL2,host_lists[1],sizeof(int)*(m),H_T_D );
 		cudaMemcpy( devV[0],temp,sizeof(int)*sizeV,H_T_D );
 		cudaMemcpy( devV[1],temp,sizeof(int)*sizeV,H_T_D );
 		cudaMemcpy( devV[2],temp,sizeof(int)*sizeV,H_T_D );
 
-		int max1 =  1<<31 - 2 - block_size;
+		int max1 =  (1<<31-1) - 2 - block_size;
 		FOR_I(0,block_size) temp[i] = max1+i;
 		cudaMemcpy((int *)(devL1+n),temp,sizeof(int)*block_size,H_T_D);
 		FOR_I(0,block_size) temp[i] = max1 -1 -block_size +i;
@@ -39,7 +38,6 @@
 	__global__ void init_device_var_kernel(){
 		int id = CUID;
 		if (id) return;
-		printf("init_device_var_kernel addr of list_p :%llx \t list_p0: %llx\n",list_p,list_p0);
 		list_p[0][0] = list_p0[0];
 		list_p[0][1] = list_p0[1];
 		FOR_I(0,QUEUE_SIZE){
@@ -47,6 +45,7 @@
 		}
 		swapped[0] = 0;//false
 		gpu_result_size = 0;
+		debug1.wrong_1 = debug1.wrong_2 = 0;
 	}
 
 
@@ -65,7 +64,6 @@
 		cudaFree(devL1);
 		cudaFree(devL2);
 		cudaFree(devResult);
-		cudaFree(devMark);
 	}
 
 	// configure : <<<1,2>>> only and but only 2 threads

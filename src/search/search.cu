@@ -150,6 +150,44 @@
 #endif
 
 
+
+	//extern __device__ void scan_a_block_neat(int * src_data,volatile int shared[][WARP_SIZE*2]);
+
+	template<int loops,bool exclusive>
+	inline __device__ void scan_warp_neet(volatile int * shared,int value,int id){
+		shared[id] = 0;
+		id += WARP_SIZE;
+		shared[id] = value;
+
+		if ( 1 <= loops ) shared[id] += shared[id - 1];
+		if ( 2 <= loops ) shared[id] += shared[id - 2];
+		if ( 3 <= loops ) shared[id] += shared[id - 4];
+		if ( 4 <= loops ) shared[id] += shared[id - 8];
+		if ( 5 <= loops ) shared[id] += shared[id - 16];
+
+		if ( exclusive )
+			shared[id] -= value;
+	}
+
+	__device__ void scan_a_block_neat(volatile int * src_data,volatile int shared[][WARP_SIZE*2]){
+		int id = threadIdx.x;
+		int local_id = id&(WARP_SIZE-1);
+		int warp_num = id >> LOG_WARP_SIZE ;
+		volatile __shared__ int shared_level2[WARP_SIZE*2];
+
+		//printf("id:%d src: %llx  shared:%llx\n",id,src_data+id,shared[warp_num]+id);//debug
+		scan_warp_neet< LOG_WARP_SIZE,false>(shared[warp_num],src_data[id],local_id );//basic level
+		syncthreads();
+		if ( id < WARP_SIZE){
+			int myvalue = shared[id][WARP_SIZE+WARP_SIZE-1];
+			scan_warp_neet<LOG_SCAN_BLOCK_SIZE - LOG_WARP_SIZE ,true>(shared_level2,myvalue,id);//second level, use calculated 32,in one block
+		}
+		syncthreads();
+		//uniform update
+		int a = shared_level2[ warp_num+WARP_SIZE ];
+		src_data[id] = shared[warp_num][ local_id + WARP_SIZE ] + a;
+	}
+
 	/**
 	 *
 	 * To write the program use minimum command
@@ -204,22 +242,6 @@
 		return result;
 	}
 
-	inline __device__ int binary_search0(int value,int & pos,volatile int *list,int left,int right){
-		int result = 0;
-		while ( left <= right ){
-			pos = (left + right)/2;
-			if ( value == list[ pos ] ){
-				//printf("block:%d thread: %d INTERSECTION %d\n",blockIdx.x,threadIdx.x,value);
-				result = 1;
-				break;
-			}
-			else if ( list[pos] < value )
-				left = pos + 1;
-			else right = pos - 1;
-		}
-		return result;
-	}
-
 	inline __device__ int binary_search(int value,int & pos,volatile int *list,int left,int right){
 		int result = 0;
 		while ( left <= right ){
@@ -241,75 +263,246 @@
 	 * begin and end are assigned from blockIdx, one block only have on value => no divergence
 	 *
 	 */
-
-	inline __device__ int search_one_value(int value,int pos,volatile int *opposite_addr,int left,int right){
+	inline __device__ int search_one_value(int value,int & pos,volatile int *opposite_addr,const int &left,const int &right){
 
 		int result = binary_search(value,pos,opposite_addr,left,right);
-		printf("<%d,%d>search %d in (%d %d) to %d\n",blockIdx.x,threadIdx.x,value,left,right,pos);//debug
-
+		//printf("<%d,%d>search %d in (%d %d) to %d\n",blockIdx.x,threadIdx.x,value,left,right,pos);//debug
+//
 		if (result){
 			int write_pos = atomicAdd(&gpu_result_size,1);
 			_result[write_pos] = value;
 		}
 
-		if (result)
-		printf("B<%d> %d was found at [%d]\n",blockIdx.x,value,pos);
+//		if (result)
+//		printf("B<%d> %d was found at [%d]\n",blockIdx.x,value,pos);
 
-		return pos;
+		return result;
 	}
 
-	inline __device__ void search_in_block(int * V,int search_now,const struct partition_info &info){
-		int id = threadIdx.x;
-		// begin and end is closed interval [begin , end]
-
-		int *list1 ;
-		int *list2 ;
-
-		if (id > info.right) return;
-
-		uint4 myvalue ;
-
-		//value = info.addr[id];
-		//printf("(%d,%d) value:%d\n",blockIdx.x,id,value);
-
-		volatile __shared__ int opposite_list[1024*4];
-		myvalue = ((uint4 *)info.opposite_addr)[id];
-
-		((uint4 *)opposite_list)[id] = myvalue;
-
-
-		if ( id >= info.len ) return; // len inclusive
-		myvalue = ((uint4 *)info.addr)[id];
-
-		volatile __shared__ int shared_range[2048];// only use once, the right most thread does not use it
-		syncthreads();
-
-		int result = 0;
-		int pos = id;
-
-		int pos_A,pos_C,pos_D;
-		pos_A = search_one_value(myvalue.x,pos,opposite_list,info.left,info.right);
+	/*
+	 * search 4 integer stored in uint4, a,b,c,d
+	 * use divide-and-conquer way a,c,b,d order search
+	 *
+	 */
+	inline __device__ void search_uint4(const int & id,const uint4 &myvalue,volatile int *opposite_list,
+			volatile int *shared_range,const struct partition_info &info,
+			int &mask,int &uint4_sum){
+		int pos_A,pos_X,pos_C,pos_D;
+		//pos_A = (info.left + info.right)/2;
+		pos_A = id;
+		mask = 0,uint4_sum=0;
+		if (search_one_value(myvalue.x,pos_A,opposite_list,info.left,info.right)){
+			mask |=1,uint4_sum ++;
+		}
 		shared_range[id] = pos_A;
+		if ( pos_A <0 || pos_A > info.right ) printf("!!!");
 		syncthreads();
 		int id_addone = id + 1;
 		if ( id_addone != info.len )
 			pos_D = shared_range[id_addone];
 		else pos_D = info.right;
 
-		pos = (pos_A + pos_D) /2 ;
-		pos_C = search_one_value(myvalue.z,pos,opposite_list,pos_A,pos_D);
-		pos = (pos_A + pos_C) /2 ;
-		search_one_value(myvalue.y,pos,opposite_list,pos_A,pos_C);
-		pos = (pos_C + pos_D) /2 ;
-		search_one_value(myvalue.w,pos,opposite_list,pos_C,pos_D);
+		pos_C = (pos_A + pos_D) /2 ;
+		if (search_one_value(myvalue.z,pos_C,opposite_list,pos_A,pos_D)){
+			mask |=4,uint4_sum ++;
+		}
+		if ( pos_C <0 || pos_C > info.right ) printf("!!!");
+		pos_X = (pos_A + pos_C) /2 ;
+		if (search_one_value(myvalue.y,pos_X,opposite_list,pos_A,pos_C)){
+			mask |=2,uint4_sum ++;
+		}
+		if ( pos_X <0 || pos_X > info.right ) printf("!!!");
+		pos_X = (pos_C + pos_D) /2 ;
+		if (search_one_value(myvalue.w,pos_X,opposite_list,pos_C,pos_D)){
+			mask |=8,uint4_sum ++;
+		}
+		if ( pos_X <0 || pos_X > info.right ) printf("!!!");
+	}
+
+	/*
+	 * Simple method, not use shared
+	 * */
+//	inline __device__ void search_uint4_2(const int & id,const uint4 &myvalue,volatile int *opposite_list,
+//			volatile int *shared_range,const struct partition_info &info,
+//			int &mask,int &uint4_sum){
+//		int pos_A,pos_X,pos_D;
+//		pos_A = id;
+//		mask = 0,uint4_sum=0;
+//		if (search_one_value(myvalue.x,pos_A,opposite_list,info.left,info.right)){
+//			mask |=1,uint4_sum ++;
+//		}
+//		pos_D =  ( pos_A+ info.right)/2;
+//		if (search_one_value(myvalue.z,pos_D,opposite_list,pos_A,info.right)){
+//			mask |=8,uint4_sum ++;
+//		}
+//		pos_X = (pos_A + pos_D) /2 ;
+//		if (search_one_value(myvalue.y,pos_X,opposite_list,pos_A,pos_D)){
+//			mask |=2,uint4_sum ++;
+//		}
+//		if (search_one_value(myvalue.w,pos_X,opposite_list,pos_X,pos_D)){
+//			mask |=4,uint4_sum ++;
+//		}
+//	}
+
+	inline __device__ void scan_and_save_buffer(volatile int *scan_array,volatile int *scan_shared,int * save_buffer,
+			int id,uint4 &myvalue,int &mask,int &uint4_sum,const struct partition_info & info){
+		scan_array[id] = uint4_sum;
+		//printf("<%d %d> position:%d %d\n",blockIdx.x,threadIdx.x,scan_array[id],info.len);
+		syncthreads();
+
+//		if (!id){
+//			FOR_I(0,blockDim.x)
+//				printf("[%llx] %d\t",scan_array+i,scan_array[i]);
+//			printf("\n");
+//			FOR_I(0,blockDim.x)
+//				printf("[%llx] %d\t",scan_shared+i,scan_shared[i]);
+//			printf("\n");
+//		}
+		scan_a_block_neat((int *)scan_array,(int (*)[WARP_SIZE*2])scan_shared);
+
+//		if (mask & 1)
+//				printf("B<%d> %d was found at\n",blockIdx.x,myvalue.x);
+//		if (mask & 2)
+//				printf("B<%d> %d was found at\n",blockIdx.x,myvalue.y);
+//		if (mask & 4)
+//				printf("B<%d> %d was found at\n",blockIdx.x,myvalue.z);
+//		if (mask & 8)
+//				printf("B<%d> %d was found at\n",blockIdx.x,myvalue.w);
+
+
+		int position = scan_array[id] - uint4_sum; // inclusive scan
+		//printf("<%d %d> position:%d\n",blockIdx.x,threadIdx.x,position);
+
+//		if ( mask & 1 )
+//			save_buffer[position] = myvalue.x;
+//		if ( mask & 2 )
+//			save_buffer[position+1] = myvalue.y;
+//		if ( mask & 4 )
+//			save_buffer[position+2] = myvalue.z;
+//		if ( mask & 8 )
+//			save_buffer[position+3] = myvalue.w;
+
+	}
+
+	inline __device__ void check_address(const struct partition_info &info,int * shared,uint4 myvalue){
+		int *abs_add1,*abs_opposite;
+		bool flag1 = false;
+		if ( info.addr - list_p0[0] <0 && info.opposite_addr - list_p0[1] <0 ){
+			printf("ONLY APPEAR ONCE\n");
+		}
+
+		if ( info.addr - list_p0[0] >=0 && info.opposite_addr - list_p0[1] >=0 ){
+			abs_add1 = list_p0[0];
+			abs_opposite = list_p0[1];
+		}
+		else {
+			abs_add1 = list_p0[1];
+			abs_opposite = list_p0[0];
+			flag1 = true;
+		}
+		//FOR_I(0,4*info.len){
+			LL offset = info.addr + (LL)(4*threadIdx.x) - abs_add1;
+/*			if ( offset <0 || offset >= _nm[0] + 128 *  8*32*4 ){
+				atomicAdd(&debug1.wrong_2,1);
+				return;
+			}*/
+			atomicAdd(&debug1.wrong_2,myvalue.x);
+			return;
+			if ( myvalue.y != abs_add1[offset+1] ){
+				atomicAdd(&debug1.wrong_2,1);
+			}
+		//}
+
+//		FOR_I(0,4*info.len_opposite){
+//			LL offset = info.opposite_addr + (LL)i - abs_opposite;
+//
+//			if ( abs_opposite[offset] != shared[i] ){
+//				atomicAdd(&debug1.wrong_1,1);
+//				//printf("wrong copy %d %d\n",info.opposite_addr[offset],shared[i]);
+//			}
+//			if (335544314 == abs_opposite[offset] || 335544319 == abs_opposite[offset]){
+//				printf("END : %d \n",offset);
+//			}
+//
+//			if ( offset <0 || offset>= _nm[0] + 128 *  8*32*4 )
+//				printf("wrong %d offset",offset-_nm[0]);
+//		}
+
+	}
+
+	inline __device__ void brute_force(uint4 & myvalue,volatile int * list,const struct partition_info &info){
+		FOR_I(info.left,info.right+1){
+			if ( myvalue.x == list[i] ){
+				int write_pos = atomicAdd(&gpu_result_size,1);
+				_result[write_pos] = myvalue.x;
+			}
+			if ( myvalue.y == list[i] ){
+				int write_pos = atomicAdd(&gpu_result_size,1);
+				_result[write_pos] = myvalue.y;
+			}
+			if ( myvalue.z == list[i] ){
+				int write_pos = atomicAdd(&gpu_result_size,1);
+				_result[write_pos] = myvalue.z;
+			}
+			if ( myvalue.w == list[i] ){
+				int write_pos = atomicAdd(&gpu_result_size,1);
+				_result[write_pos] = myvalue.w;
+			}
+		}
+	}
+
+	inline __device__ void search_in_block(int * V,int search_now,const struct partition_info &info){
+		int id = threadIdx.x;
+		// begin and end is closed interval [begin , end]
+
+		volatile __shared__ int opposite_list[10*32*4];
+		//volatile __shared__ int shared_range[1024];// only use once, the right most thread does not use it
+		int mask,uint4_sum;
+		uint4 myvalue ;
+		bool flag1 = false;
+		/*
+		 * shared_range __shared__ use as src_data for scan
+		 * opposite_list __shared__ use as
+		 *  */
+
+		// the thread which should copy opposited list elements
+
+		if (id < info.len_opposite){
+
+			myvalue = ((uint4 *)info.opposite_addr)[id];
+			//atomicAdd(&debug1.wrong_1,myvalue.w);
+			((uint4 *)opposite_list)[id] = myvalue;
+			if ( id < info.len ){
+				myvalue = ((uint4 *)info.addr)[id];
+				//atomicAdd(&debug1.wrong_2,myvalue.w);
+				flag1 = true;
+				//search_uint4(id,myvalue,opposite_list,shared_range,info,mask,uint4_sum);
+			}
+		}
+		syncthreads();
+
+//		if ( !threadIdx.x ){
+//			FOR_I(0,info.len_opposite)
+//				printf("%d\t",info.opposite_addr[i]);
+//			FOR_I(0,info.len_opposite)
+//				printf("%d\t",info.opposite_addr[i]);
+//		}
+
+		if (flag1){
+			//check_address(info,(int *)opposite_list,myvalue);
+			brute_force(myvalue, info.opposite_addr ,info);
+			//search_uint4(id,myvalue,opposite_list,shared_range,info,mask,uint4_sum);
+		}
+		//
+
+		//if ( id < info.warp_len )
+		//scan_and_save_buffer(shared_range,opposite_list,V,id,myvalue,mask,uint4_sum,info);
 	}
 
 	__global__ void algo2_search(int * V,int search_now,int offset){
-		int id = threadIdx.x;
 		if (partitions_info[search_now][blockIdx.x].len>0){
 			search_in_block(V,search_now,partitions_info[search_now][ blockIdx.x ]);
 		}
-		//else if (!id) printf("BLOCK %d GIVE UP\n",blockIdx.x);
 	}
 
 #if DEPLETED

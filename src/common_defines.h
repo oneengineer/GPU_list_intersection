@@ -33,6 +33,7 @@
 
 #define DEPLETED 0
 
+
 const int QUEUE_SIZE= 4;
 const int N = 50*1024*1024;
 
@@ -44,7 +45,7 @@ const int N = 50*1024*1024;
 
 struct partition_info{
 	int *addr,*opposite_addr;
-	int len;//length of elements in addr
+	int len,len_opposite,warp_len;//length of elements in addr
 	int left,right;// range of opposite_addr
 	bool B2A;
 };
@@ -56,9 +57,24 @@ extern __device__ int swapped[QUEUE_SIZE];   // save swapped stage for each stat
 extern __device__ int *_result;
 extern __device__ int gpu_result_size;
 extern __device__ int _nm[2];
-extern __device__ int partitions[QUEUE_SIZE][256+4][2];
-extern __device__ partition_info partitions_info[QUEUE_SIZE][256+4];
+extern __device__ int partitions[QUEUE_SIZE][512+4][2];
+extern __device__ partition_info partitions_info[QUEUE_SIZE][512+4];
 
+
+struct debug_structure{
+	int num_loop;
+	int wrong_1;
+	int wrong_2;
+};
+
+extern __device__ debug_structure debug1;
+
+#define WARP_SIZE 32
+#define LOG_WARP_SIZE 5
+#define SCAN_BLOCK_SIZE 1024
+#define LOG_SCAN_BLOCK_SIZE 10
+
+typedef long long LL;
 
 #endif
 

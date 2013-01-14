@@ -118,7 +118,7 @@ int *host_lists[2];
 
 int *devL1,*devL2;
 bool *v;
-int *devV[3],*devResult, *devMark;
+int *devV[3],*devResult;
 int * devIndices;
 int n,m;
 
@@ -133,8 +133,10 @@ __device__ int swapped[QUEUE_SIZE];   // save swapped stage for each status
 __device__ int *_result;
 __device__ int gpu_result_size;
 __device__ int _nm[2];
-__device__ int partitions[QUEUE_SIZE][256+4][2];
-__device__ partition_info partitions_info[QUEUE_SIZE][256+4];
+__device__ int partitions[QUEUE_SIZE][512+4][2];
+__device__ partition_info partitions_info[QUEUE_SIZE][512+4];
+
+__device__ debug_structure debug1;
 
 	inline void move_pos(int &pos){
 		pos = (pos + 1) % QUEUE_SIZE;
@@ -175,6 +177,7 @@ __device__ partition_info partitions_info[QUEUE_SIZE][256+4];
 			struct partition_info *info = &partitions_info[indices_now][i];
 			printf("Partation: %d\n",i);
 			printf("[%llx]: %d --- [%llx]:%d\n",info->addr,*(info->addr),info->opposite_addr,*(info->opposite_addr));
+			printf("[%lld]: --- [%lld]:\n",info->addr - list_p0[ info->B2A ],info->opposite_addr - list_p0[!info->B2A]);
 			if (printout){
 				FOR_I(0,info->len*4) printf("%d \t",info->addr[i]);
 				printf("\n |||||||| \n");
@@ -184,6 +187,25 @@ __device__ partition_info partitions_info[QUEUE_SIZE][256+4];
 				printf("\n");
 			}
 			printf("len:%d \t left:%d\t right:%d \t B2A:%d\n",info->len,info->left,info->right,info->B2A);
+		}
+	}
+
+	__global__ void help_show_partation2(int indices_now,int num_part){
+		FOR_I(0,num_part){
+			struct partition_info *info = &partitions_info[indices_now][i];
+			printf("Partation: %d\n",i);
+			printf("len:%d \t left:%d\t right:%d \t B2A:%d\n",info->len,info->left,info->right,info->B2A);
+			long long offset1,offset2;
+			if (info->B2A){
+				offset1 = info->opposite_addr - list_p0[0];
+				offset2 = info->addr - list_p0[1];
+			}
+			else{
+				offset1 = info->addr - list_p0[0];
+				offset2 = info->opposite_addr - list_p0[1];
+			}
+			printf("offset : < %lld --- %lld >",offset1,offset2);
+			printf("\n---------------------\n");
 		}
 	}
 
@@ -198,7 +220,12 @@ __device__ partition_info partitions_info[QUEUE_SIZE][256+4];
 		printf("\n");
 	}
 
+	__global__ void help_debug(int loop){
+		debug1.num_loop = loop;
+	}
+
 	void work(){
+
 		int numStream;
 		numStream = 4;
 		cudaStream_t *streams = (cudaStream_t *) malloc(numStream * sizeof(cudaStream_t));
@@ -212,10 +239,10 @@ __device__ partition_info partitions_info[QUEUE_SIZE][256+4];
 		int block_2_size;
 		//------ some settings ----------
 		D1save = 16;
-		D1 = 128;D2 = 512;
+		D1 = 128;D2 = 8*32*4;
 
-		D1 = 16;D2 = 64;
-		//D1 = 2;D2 = 4;
+		//D1 = 16;D2 = 64;
+		//D1 = 8;D2 = 64*4;//D2 has to be the multiply of WARP_SIZE, because
 
 		int save_stream = 2;
 		int search_stream = 1;
@@ -227,18 +254,6 @@ __device__ partition_info partitions_info[QUEUE_SIZE][256+4];
 		init_data(block_size);
 		init_device_variables();
 		init_scan(&streams[save_stream],1024);
-		ScanSequence scanSeq(1,devV[0],block_size);
-		scanSeq.init();
-
-		SearchSettingQueue searchQue(2,&(streams[search_stream]));
-		int searchConfig[][2] = { {64,512},{64,512},{64,512},{64,512} };
-		int searchConfig8[][2] = { {32,512},{32,512},{32,512},{32,512},{32,512},{32,512},{32,512},{32,512} };
-		int searchConfig1[][2] = { {256,512}};
-		int searchConfig2[][2] = { {128,512},{128,512}};
-		int searchConfig_small[][2] = { {1,16}};
-		searchQue.setSettings(searchConfig2);
-		searchQue.init();
-		outln(searchQue.length());
 
 		int num_small_block = D1;
 		dim3 cal_indx_setting(num_small_block,2);
@@ -246,6 +261,8 @@ __device__ partition_info partitions_info[QUEUE_SIZE][256+4];
 		CudaWatch cudawatch;
 		Watch cpuWatch;cpuWatch.start();
 		cudawatch.start();
+		cudaFuncSetCacheConfig(algo2_search,cudaFuncCachePreferShared);
+		cu_checkError();
 
 		//CUDPPHandle prefixsum_plan = prepare_prefixsum(block_size,streams+2);
 		//show_addr_value<<<1,1>>>(devL1,n);
@@ -256,7 +273,7 @@ __device__ partition_info partitions_info[QUEUE_SIZE][256+4];
 		while (true){
 			int devVinc = 0; // use which devV to store data
 			back_next_relative_len(len1,len2,cal_pos);
-			cu_checkError();
+			//cu_checkError();
 			outln(len1);outln(len2);//debug
 			if ( len1<=0 || len2 <= 0 ) break;
 			int loops = min(len1,len2)/block_size;
@@ -265,37 +282,30 @@ __device__ partition_info partitions_info[QUEUE_SIZE][256+4];
 
 			if ( loops >0 ){
 				outln(loops);
-				bool lastButOne = loops > 1;
 				int *saveV; //pointer of saving result
 
 				//-- stage middle
 				for ( ;loops> 0 ;loops -- ){
+					help_debug<<<1,1>>>(loops);
 					outline;outline;outln(loops);
 					saveV = devV[ devVinc];
 					cal_indx<<<1,cal_indx_setting>>>( block_size,block_2_size,cal_pos);
 					//cudaDeviceSynchronize();
-					//if ( 2 == loops )
-					help_show_partation<<<1,1>>>(cal_pos,4,true);//debug
+					if (1 == loops){
+						//help_show_partation2<<<1,1>>>(cal_pos,128);//debug
+						//return;
+					}
 					//cudaDeviceSynchronize();
 					algo2_search<<< 2 * D1 , D2/4 >>>(saveV,search_pos,0);
-					//cu_host_print(saveV,block_size);//debug
-					//save_one_core<<<1,1>>>(search_pos,devV[0]);
-					//scanSeq.set(saveV,save_pos);
-					//scanSeq.run_all();
-					//cu_host_print(saveV,block_size);//debug
 
-					//cu_checkError();
-//					if ( loops < 10)
-//						help_show1<<<1,1>>>(save_pos);
 					move_pos(cal_pos);move_pos(search_pos);move_pos(save_pos);
-
 
 					//mssleep(10);
 					cudaDeviceSynchronize();
 					//back__result<<<1,1>>>();return;
 				}
 				//break;//debug
-				cudaDeviceSynchronize();
+				//cudaDeviceSynchronize();
 			}
 
 			cu_checkError();
@@ -470,38 +480,51 @@ int cpuResultSize = 0;
 #endif
 
 
+	__global__ void show_debug_1(){
+		printf("wrong 1 times: %d\n",debug1.wrong_1);
+		printf("wrong 2 times: %d\n",debug1.wrong_2);
+	}
 
 int main(int arg_num,char ** args){
+	//cudaDeviceReset();
 
-
-	prepare_data(1024*1024*50);
-
+	prepare_data(1024*1024*90);
 
 	FOR_I(155,10000){
-		if ( arg_num >1 ){
-			int read_seed = 2;
-			sscanf(args[1],"%d",&read_seed);
-			srand(read_seed);
-			printf("READ SEED:%d\n",read_seed);
+		srand(i);
+		FOR_J(0,arg_num){
+			char ch = args[j][0];
+			if ( '0'<= ch && ch<='9'){
+				int seed;
+				sscanf(args[j],"%d",&seed);
+				srand(seed);
+				printf("SEED: %d\n",seed);
+			}
 		}
-		else srand(i);
-		//srand(699214);
-	//n = 1024*1024*40;
+		//srand(710852);
+	n = 1024*1024*40;
+	//n = 1024*1024*10;
+	//n = 1024*1024;
 	//n = 1024*102;
-	n = 1024*10;
+	//n = 5000;
+	//n = 660;
 	//n = 66;
 	//n = 20;
 
 	//generate_case5();
-	generate_random(1.0,1.0,1.0);
+	//generate_random(1.0,2.0,2.0);
 	//n = m = 70;
 	//host_lists[1][16] = 65;
 	//generate_same(2.0);
+	generate_shift(2.0,1);
 
 	cout<<"generate data over srand("<<i<<") n="<<n<<" m="<<m<<endl;
-	debug_a(host_lists[0],n);debug_a(host_lists[1],m);//debug
+	//debug_a(host_lists[0],n);debug_a(host_lists[1],m);//debug
 	printf("List 1 ( %d --- %d --- %d )\n",host_lists[0][0],host_lists[0][n/2],host_lists[0][n-1]);
 	printf("List 2 ( %d --- %d --- %d )\n",host_lists[1][0],host_lists[1][m/2],host_lists[1][m-1]);
+
+	int sum1=0,sum2=0;
+	FOR_K(0,n) if (k%4 ==3) { sum1 += host_lists[0][k],sum2 += host_lists[1][k]; }
 
 	Watch watch;watch.start();
 	int cpuResultSize = merge_algo(host_lists[0],host_lists[1],0,n,0,m);
@@ -512,7 +535,9 @@ int main(int arg_num,char ** args){
 
 
 	work();
-	cuda_copyResult();cout<<"copied back"<<endl;
+	show_debug_1<<<1,1>>>();
+	outln(sum1);outln(sum2);
+	//cuda_copyResult();cout<<"copied back"<<endl;
 	cu_checkError();
 	free_device_memory();
 	printf(" results / elements = %d / %d %lf\n",Lresult,n,(1.0*Lresult)/(1.0*n));
@@ -520,7 +545,7 @@ int main(int arg_num,char ** args){
 	sort(resultList,resultList + Lresult);
 	outln(Lresult);outln(cpuResultSize);
 	//debug_a(resultList,Lresult);
-	debug_a(cpuResult,cpuResultSize);
+	//debug_a(cpuResult,cpuResultSize);
 	//break;
 
 	//continue;// DO NOT CHECK correctness

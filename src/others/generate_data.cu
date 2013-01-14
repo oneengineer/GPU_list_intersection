@@ -41,6 +41,26 @@ using namespace std;
 		memcpy(host_lists[1],host_lists[0],sizeof(int)*n);
 	}
 
+	void generate_same(double scala,double times){
+		printf("scala:%lf  and LIST2 ARE %lf TIMES THAN LIST1!\n",scala,times);//debug
+		int mod = n*4;
+		m = n;
+		int mod1 = (int)((double)mod*scala + eps);
+		generate_different(host_lists[0],n,mod1);
+		sort(host_lists[0],host_lists[0]+n);
+		FOR_I(0,n) host_lists[1][i] = host_lists[0][i]*times;
+	}
+
+	void generate_shift(double scala,int movement){
+		printf("scala:%lf  and LIST2 ARE %d MORE THAN LIST1!\n",scala,movement);//debug
+		int mod = n*4;
+		m = n;
+		int mod1 = (int)((double)mod*scala + eps);
+		generate_different(host_lists[0],n,mod1);
+		sort(host_lists[0],host_lists[0]+n);
+		FOR_I(0,n) host_lists[1][i] = host_lists[0][i] + movement;
+	}
+
 
 	void generate_save(double alpha,double scala1,double scala2){
 		printf("alpha:%lf  scala1:%lf  scala2:%lf\n",alpha,scala1,scala2);//debug
