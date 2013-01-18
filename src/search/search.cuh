@@ -13,6 +13,16 @@
 
 __global__ void algo2_search(int * V,int search_now,int offset = 0);
 
+__device__ void scan_buffer_large2(volatile int  shared[][WARP_SIZE*2]);
+
+__global__ void scan_buffer_large(int save_indx);
+
+//template<int num_warp>
+//__global__ void scan_buffer_large(){
+//	__shared__ volatile int  shared[num_warp][WARP_SIZE*2];
+//	scan_buffer_large2(shared);
+//}
+
 struct SearchSetting{
 	int D1,D2;
 	int size(){
@@ -68,5 +78,6 @@ struct SearchSettingQueue{
 	}
 
 };
+
 
 #endif /* SEARCH_CUH_ */

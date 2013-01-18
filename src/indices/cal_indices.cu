@@ -111,8 +111,8 @@
 		len1 = end1 - begin1,len2 = end2 - begin2;
 		right1 = len1 - right1,right2 = len2 - right2;
 
-		if ( (len1+1) % 4!=0 || (len2+1) %4 !=0 ) printf("!!wrong\n");
-		if ( begin1 < 0 || begin2 < 0) printf("!!wrong\n");
+//		if ( (len1+1) % 4!=0 || (len2+1) %4 !=0 ) printf("!!wrong\n");
+//		if ( begin1 < 0 || begin2 < 0) printf("!!very wrong\n");
 
 	}
 
@@ -156,19 +156,19 @@
 		bitonic_merge(false,shared[myside],id,parts);
 		syncthreads();
 
-		if (!id && !monotone_check( (int *)(shared[myside]),parts*2))
-			printf("WRONG!!");
+//		if (!id && !monotone_check( (int *)(shared[myside]),parts*2))
+//			printf("WRONG!!");
 
 		//debug print out
-		if ( 12 == debug1.num_loop )
-		if ( !myside && !id ){
-			printf("[%d]:%d ==== [%d]:%d\n",0,myList[0],0,oppositeList[0]);
-			FOR_I(0,parts*2){
-				int a = shared[0][ i ];
-				int b = shared[1][ i ];
-				printf("[%d]:%d --- [%d]:%d\n",a,myList[a],b,oppositeList[b]);
-			}
-		}
+//		if ( 12 == debug1.num_loop )
+//		if ( !myside && !id ){
+//			printf("[%d]:%d ==== [%d]:%d\n",0,myList[0],0,oppositeList[0]);
+//			FOR_I(0,parts*2){
+//				int a = shared[0][ i ];
+//				int b = shared[1][ i ];
+//				printf("[%d]:%d --- [%d]:%d\n",a,myList[a],b,oppositeList[b]);
+//			}
+//		}
 
 		syncthreads();
 		int whole_id = blockDim.x * myside + id;
@@ -220,7 +220,13 @@
 			info->len = (len2+1)>>2;
 			info->len_opposite = (len1+1)>>2;
 		}
-		info->warp_len = complement(info->len-1,WARP_SIZE) + (info->len-1)&(0xFFFFFF20);
+
+		info->warp_len = info->len - info->len % WARP_SIZE;
+		_scan_buffers[indices_now][whole_id] = 0;
+
+		if ( info->len % WARP_SIZE ){
+			info->warp_len += WARP_SIZE;
+		}
 
 		syncthreads();
 		if (( whole_id == 2*parts - 1 && shared_decide_next_addr[ whole_id ] == 1 ) ||

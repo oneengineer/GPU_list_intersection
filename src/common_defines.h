@@ -42,6 +42,16 @@ const int N = 50*1024*1024;
 #define D_T_D cudaMemcpyDeviceToDevice
 #define CUID (threadIdx.x + blockIdx.x*blockDim.x)
 #define CUSIZE (blockDim.x*gridDim.x)
+#define IS_LAST ((threadIdx.x + blockIdx.x*blockDim.x) == CUSIZE -1)
+#define IS_FIRST (!threadIdx.x && !blockIdx.x)
+
+#define WARP_SIZE 32
+#define LOG_WARP_SIZE 5
+#define SCAN_BLOCK_SIZE 1024
+#define LOG_SCAN_BLOCK_SIZE 10
+
+#define DEF_D1 256
+#define DEF_D2 (14*WARP_SIZE*4)
 
 struct partition_info{
 	int *addr,*opposite_addr;
@@ -57,8 +67,11 @@ extern __device__ int swapped[QUEUE_SIZE];   // save swapped stage for each stat
 extern __device__ int *_result;
 extern __device__ int gpu_result_size;
 extern __device__ int _nm[2];
-extern __device__ int partitions[QUEUE_SIZE][512+4][2];
-extern __device__ partition_info partitions_info[QUEUE_SIZE][512+4];
+extern __device__ partition_info partitions_info[QUEUE_SIZE][DEF_D1*2 + 4];
+extern __device__ int *_result_addr[QUEUE_SIZE];
+
+extern __device__ int o_scan_buffers[QUEUE_SIZE][4+DEF_D1*2+32*2];
+extern __device__ int *_scan_buffers[QUEUE_SIZE];
 
 
 struct debug_structure{
@@ -68,11 +81,6 @@ struct debug_structure{
 };
 
 extern __device__ debug_structure debug1;
-
-#define WARP_SIZE 32
-#define LOG_WARP_SIZE 5
-#define SCAN_BLOCK_SIZE 1024
-#define LOG_SCAN_BLOCK_SIZE 10
 
 typedef long long LL;
 

@@ -5,23 +5,20 @@
 
 	void init_data(int block_size){
 		block_size += 4 + 1 + WARP_SIZE*4;
-		//block_size *= 16;
-		int sizeV = block_size + 10;
+		block_size *= 2;
+		int sizeV = block_size +4;
 		int *temp = new int [sizeV];
 		FOR_I(0,sizeV) temp[i] = 0;
 
 		cudaMalloc( (void **)&devL1, sizeof(int)*(n+block_size) );
 		cudaMalloc( (void **)&devL2, sizeof(int)*(m+block_size) );
-		cudaMalloc( (void **)&(devV[0]), sizeof(int)*sizeV );
-		cudaMalloc( (void **)&(devV[1]), sizeof(int)*sizeV );
-		cudaMalloc( (void **)&(devV[2]), sizeof(int)*sizeV );
+		FOR_I(0,QUEUE_SIZE){
+			cudaMalloc( (void **)&(devV[i]), sizeof(int)*sizeV );
+			cudaMemcpy( devV[i],temp,sizeof(int)*sizeV,H_T_D );
+		}
 		cudaMalloc( (void **)&devResult, sizeof(int)*(n+block_size) );
-
 		cudaMemcpy( devL1,host_lists[0],sizeof(int)*(n),H_T_D );
 		cudaMemcpy( devL2,host_lists[1],sizeof(int)*(m),H_T_D );
-		cudaMemcpy( devV[0],temp,sizeof(int)*sizeV,H_T_D );
-		cudaMemcpy( devV[1],temp,sizeof(int)*sizeV,H_T_D );
-		cudaMemcpy( devV[2],temp,sizeof(int)*sizeV,H_T_D );
 
 		int max1 =  (1<<31-1) - 2 - block_size;
 		FOR_I(0,block_size) temp[i] = max1+i;
@@ -29,9 +26,6 @@
 		FOR_I(0,block_size) temp[i] = max1 -1 -block_size +i;
 		cudaMemcpy((int *)(devL2+m),temp,sizeof(int)*block_size,H_T_D);
 
-		devV[0] +=4; // memeory allign for cudpp
-		devV[1] +=4; // memeory allign for cudpp
-		devV[2] +=4; // memeory allign for cudpp
 	}
 
 
@@ -41,7 +35,9 @@
 		list_p[0][0] = list_p0[0];
 		list_p[0][1] = list_p0[1];
 		FOR_I(0,QUEUE_SIZE){
-			partitions[i][0][0] = partitions[i][0][1] = -1;
+			_result_addr[i] = _result;
+			FOR_J(0,4+32) o_scan_buffers[i][j] = 0;
+			_scan_buffers[i] = o_scan_buffers[i]+4;
 		}
 		swapped[0] = 0;//false
 		gpu_result_size = 0;

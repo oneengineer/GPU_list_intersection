@@ -6,16 +6,19 @@ import re
 import random
 import time
 
-exepath = "../project/list_intersection"
+exepath = "/home/delta1/xchen/programming/workspace/list_intersection/project/list_intersection"
+home = "/home/delta1/xchen"
+checkexe = home+"/sh/my.cudacheck.sh"
 
 def test_one(srand):
 	print "testing..... %d" % (srand)
 	time.sleep(0.05);
-	proc = subprocess.Popen(["cuda-memcheck",exepath,str(srand)],stdout=subprocess.PIPE)
+	exe = "~/sh/my.cudacheck.sh";
+	proc = subprocess.Popen([exe,exepath,str(srand)],stdout=subprocess.PIPE,shell=True)
 	return_code = proc.wait()
 	text = " ".join(proc.stdout)
 
-	#print text
+	print text
 
 	pattern ='ERROR:'
 
@@ -35,4 +38,7 @@ def work():
 			break
 
 
-work()
+print checkexe,exepath
+p1 = subprocess.call(["/home/delta1/xchen/sh/my.cudacheck.sh",exepath],shell=True)
+
+#work()

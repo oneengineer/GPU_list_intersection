@@ -13,7 +13,7 @@ extern int *host_lists[2];
 
 extern int *devL1,*devL2;
 extern bool *v;
-extern int *devV[3],*devResult, *devMark;
+extern int *devV[QUEUE_SIZE],*devResult, *devMark;
 extern int * devIndices;
 extern int n,m;
 

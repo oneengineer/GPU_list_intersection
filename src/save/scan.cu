@@ -184,6 +184,24 @@ cudaStream_t *scan_stream;
 		scan_large<<<1,blocks,0,*scan_stream>>>(devL,scan_buffer+4,blocks,small_size);
 	}
 
+//	template<int loops,bool exclusive>
+//	inline __device__ void scan_warp_neet(volatile int * shared,int value,int id){
+//		shared[id] = 0;
+//		id += WARP_SIZE;
+//		shared[id] = value;
+//
+//		if ( 1 <= loops ) shared[id] += shared[id - 1];
+//		if ( 2 <= loops ) shared[id] += shared[id - 2];
+//		if ( 3 <= loops ) shared[id] += shared[id - 4];
+//		if ( 4 <= loops ) shared[id] += shared[id - 8];
+//		if ( 5 <= loops ) shared[id] += shared[id - 16];
+//
+//		if ( exclusive )
+//			shared[id] -= value;
+//	}
+
+
+
 
 
 
