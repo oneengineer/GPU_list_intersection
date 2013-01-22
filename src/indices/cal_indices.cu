@@ -148,7 +148,7 @@
 		//------ END bsearch upper bound part----------
 		opposite_idx = left + ( oppositeList[left] <= myValue ) - 1;
 
-		__shared__ volatile int shared[2][1024+1];
+		__shared__ volatile int shared[2][2*DEF_D1+1];
 		shared[myside][ parts - id - 1 ] = idx; //reverse save
 		shared[opposite_side][ parts + id ] = opposite_idx;
 
@@ -172,7 +172,7 @@
 
 		syncthreads();
 		int whole_id = blockDim.x * myside + id;
-		__shared__ volatile int shared_decide_next_addr[1024+1];//default may be not 0!!
+		__shared__ volatile int shared_decide_next_addr[2*DEF_D1+1];//default may be not 0!!
 		shared_decide_next_addr[whole_id] = max( shared[0][whole_id], shared[1][whole_id] ) < block_size;
 		syncthreads();
 		int indices_next = (indices_now + 1) % QUEUE_SIZE;
@@ -246,10 +246,193 @@
 
 	}
 
+	__device__ void cal_indx_3(int block_size,int indices_now){
+		int id = threadIdx.x;
+		int side = threadIdx.y;
+		int n = blockDim.x;
+		int part_size = block_size / n;
+		int x,y;
+		int left = 0,right;
+		int *myList = list_p[indices_now][ 0];
+		int *oppositeList = list_p[indices_now][ 1];
+
+		_scan_buffers[indices_now][threadIdx.x+threadIdx.y*blockDim.x] = 0;
+
+		if ( 0 == id && 1 == side ) return;
+
+		if ( 1 == side){
+			x = block_size-1;
+			y = id * part_size ;
+			right = (n-id)*part_size;
+		}
+		else {
+			x = (id+1) * part_size-1;
+			y = 0;
+			right = (id+1)*part_size;
+		}
+
+		//printf("<%d %d> x:%d y:%d  value1:%d,%d\n",side,id,x,y,myList[x],oppositeList[y]);
+
+		int x2,y2;
+		while (left<right){
+			int mid = (left + right + 1)/2;
+			x2 =  x - mid;//hash back
+			y2 =  y + mid;
+			if (  myList[x2] < oppositeList[y2] )
+				right = mid - 1;
+			else left = mid;
+		}
+
+		x2 =  x - left;//hash back
+		y2 =  y + left;
+
+		//printf("<%d %d> found %d <%d,%d> (%d,%d)\n",side,id,left,x2,y2,myList[x2] ,oppositeList[y2] );
+
+		if ( x2 >=0  ){
+			if (myList[x2] > oppositeList[y2] ){
+				x2 --;
+			}
+//			else if ((myList[x2] < oppositeList[y2] ))
+//				y2 --;
+		}
+
+		//printf("<%d %d> found %d <%d,%d> (%d,%d)\n",side,id,left,x2,y2,myList[x2] ,oppositeList[y2] );
+		__shared__ volatile int shared[2][2*DEF_D1+1];
+		int whole_id = id;
+		if ( side == 1 )
+			whole_id = id-1 + blockDim.x;
+		shared[0][whole_id+1] = x2;
+		shared[1][whole_id+1] = y2;
+		if ( 0 == whole_id &&  0 == blockIdx.x)
+			shared[0][0] = -1,shared[1][0] = -1;
+		syncthreads();
+
+//		if ( IS_FIRST){
+//			printf("[%d]:%d ==== [%d]:%d\n",0,myList[0],0,oppositeList[0]);
+//			FOR_I(1,part_size){
+//				int a = shared[0][ i ];
+//				int b = shared[1][ i ];
+//				printf("[%d]:%d --- [%d]:%d\n",a,myList[a],b,oppositeList[b]);
+//			}
+//		}
+
+		__shared__ volatile int shared_decide_next_addr[2*DEF_D1+1];//default may be not 0!!
+
+		if ( shared[0][whole_id+1] == shared[0][whole_id] ){
+			shared_decide_next_addr[whole_id] = -1;//vertical line
+		}
+		else if ( shared[1][whole_id+1] == shared[1][whole_id] ){
+			shared_decide_next_addr[whole_id] = 1; //line
+		}
+		else shared_decide_next_addr[whole_id] = 0; //OK
+		int indices_next = (indices_now + 1) % QUEUE_SIZE;
+
+
+		int begin1,end1,begin2,end2,len1,len2;
+		if ( whole_id == 0 ){
+
+			begin1 = calculated_indices_len[indices_now][0];
+			begin2 = calculated_indices_len[indices_now][1];
+			//begin1 = 0;
+			//begin2 = 0;
+		}
+		else {
+			begin1 = shared[0][whole_id]+1;
+			begin2 = shared[1][whole_id]+1;
+		}
+		int left1,left2,right1,right2;
+		end1 = shared[0][whole_id+1], end2 = shared[1][whole_id+1];
+
+//		printf("wid: wholeID %d <%d %d> begin [%d]%d <---> [%d]%d\n",whole_id,threadIdx.y,threadIdx.x,begin1,myList[begin1],begin2,oppositeList[begin2]);
+//		printf("wid: wholeID %d <%d %d> end [%d]%d <---> [%d]%d\n",whole_id,threadIdx.y,threadIdx.x,end1,myList[end1],end2,oppositeList[end2]);
+
+		len1 = end1 - begin1+1;
+		len2 = end2 - begin2+1;
+
+		make_memory_alignment(list_p[indices_now][ 0 ],list_p[ indices_now ][ 1 ],begin1, begin2,end1 ,end2, left1, left2,right1, right2,len1, len2);
+
+		if ( 0 != shared_decide_next_addr[whole_id] ){
+			len1 = len2 = -999;//do not do calculation
+		}
+		struct partition_info *info = & partitions_info[indices_now][whole_id];
+		if ( len1 <= len2 ){
+			// A ---> B
+			info->B2A = false;
+			info->addr = list_p[indices_now][0]+begin1;
+			info->opposite_addr = list_p[indices_now][1]+begin2;
+			info->left = left2;
+			info->right = right2;
+			info->len = (len1+1)>>2;
+			info->len_opposite = (len2+1)>>2;
+
+			//info->len = len1;
+
+		}
+		else{
+			// B ---> A
+			info->B2A = true;
+			info->addr = list_p[indices_now][1]+begin2;
+			info->opposite_addr = list_p[indices_now][0]+begin1;
+			info->left = left1;
+			info->right = right1;
+			info->len = (len2+1)>>2;
+			info->len_opposite = (len1+1)>>2;
+
+
+			//info->len = len2;
+
+		}
+
+		info->warp_len = info->len - info->len % WARP_SIZE;
+
+
+		if ( info->len % WARP_SIZE ){
+			info->warp_len += WARP_SIZE;
+		}
+
+
+		__shared__ int ending;
+		if ( whole_id == 0 ){
+			int start = shared_decide_next_addr[blockDim.x*2-2];
+			if ( 0 == start ){
+				ending = blockDim.x*2-3;
+			}
+			else {
+				for (int i = blockDim.x*2-3;i>=0;i--)
+					if ( start != shared_decide_next_addr[i] ){
+						ending = i;
+						break;
+					}
+			}
+		}
+
+		syncthreads();
+		if ( ending+1 == whole_id ){
+
+			int begin_new1 = (shared[0][whole_id]+1 )& ALIGN_MOD;
+			int begin_new2 = (shared[1][whole_id]+1 )& ALIGN_MOD;
+			swapped[ indices_next ] = 0;
+			swapped[ indices_now ] = 0;
+
+			list_p[indices_next][ 0 ] = list_p[indices_now][ 0 ] + shared[0][whole_id]+1 - begin_new1;
+			list_p[indices_next][ 1 ] = list_p[indices_now][ 1 ] + shared[1][whole_id]+1 - begin_new2;
+			calculated_indices_len[indices_next][0] = begin_new1; //changed meaning
+			calculated_indices_len[indices_next][1] = begin_new2; //changed meaning
+			//printf("movement: %d,%d\n",shared[0][whole_id]+1,shared[1][whole_id]+1);
+
+			//printf("Next real start: [%d]:%d [%d]:%d\n",begin_new1,list_p[indices_next][0][begin_new1],begin_new2,list_p[indices_next][1][begin_new2]);
+		}
+//		if ( whole_id > ending +1 )
+//			info->len = -999;
+
+
+	}
+
 	__global__ void cal_indx (int block_size,int block_2_size,int indices_now){
 		//cal_indx_1(block_size,block_2_size,indices_now);
 		int n = blockDim.x;
 		cal_indx_2(n,block_size/n,block_size,indices_now);
+		//cal_indx_3(block_size,indices_now);
 	}
 
 

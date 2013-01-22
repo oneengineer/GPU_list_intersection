@@ -51,7 +51,7 @@ const int N = 50*1024*1024;
 #define LOG_SCAN_BLOCK_SIZE 10
 
 #define DEF_D1 256
-#define DEF_D2 (14*WARP_SIZE*4)
+#define DEF_D2 896
 
 struct partition_info{
 	int *addr,*opposite_addr;

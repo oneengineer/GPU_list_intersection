@@ -281,11 +281,13 @@
 	 */
 	inline __device__ int search_one_value(int value,int & pos,volatile int *opposite_addr,const int &left,const int &right){
 
+		//printf("[<%d,%d>] has value  %d search in %d %d\n",blockIdx.x,threadIdx.x,value,opposite_addr[left],opposite_addr[right]);
 		int result = binary_search(value,pos,opposite_addr,left,right);
 
 //
 //		if (result){
 //			int write_pos = atomicAdd(&gpu_result_size,1);
+//			printf("[<%d,%d>] found %d\n",blockIdx.x,threadIdx.x,value);
 //			_result[write_pos] = value;
 //		}
 		return result;
@@ -364,7 +366,7 @@
 		syncthreads();
 
 		int position = scan_array[id] - uint4_sum; // exclusive scan
-		int position_debug = position;
+		//int position_debug = position;
 
 		if ( mask & 1 )
 			result_buffer[position++] = myvalue.x;
@@ -428,19 +430,18 @@
 		if (id < info.len_opposite){
 
 			myvalue = ((uint4 *)info.opposite_addr)[id];
-			//atomicAdd(&debug1.wrong_1,myvalue.w);
 			((uint4 *)opposite_list)[id] = myvalue;
 			if ( id < info.len ){
 				myvalue = ((uint4 *)info.addr)[id];
 				flag1 = true;
-				//search_uint4(id,myvalue,opposite_list,shared_range,info,mask,uint4_sum);
+
 			}
 		}
 		if ( id < info.warp_len ){
 			mask= 0;uint4_sum=0;
 			syncthreads();
 			if (flag1){
-				search_uint4_2(id,myvalue,opposite_list,shared_range,info,mask,uint4_sum);
+				search_uint4(id,myvalue,opposite_list,shared_range,info,mask,uint4_sum);
 			}
 			syncthreads();
 			scan_and_save_buffer(shared_range,opposite_list,V+DEF_D2*blockIdx.x,id,myvalue,mask,uint4_sum);

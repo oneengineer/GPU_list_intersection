@@ -189,6 +189,8 @@ __global__ void help_show_partation(int indices_now, int num_part,
 	FOR_I(0,num_part)
 	{
 		struct partition_info *info = &partitions_info[indices_now][i];
+		if (info->len <=0) continue;
+
 		printf("Partation: %d\n", i);
 		printf("[%llx]: %d --- [%llx]:%d\n", info->addr, *(info->addr),
 				info->opposite_addr, *(info->opposite_addr));
@@ -204,7 +206,7 @@ __global__ void help_show_partation(int indices_now, int num_part,
 			//FOR_I(info->left,info->right+1) printf("%d \t",info->opposite_addr[i]);
 			printf("\n");
 		}
-		printf("len:%d \t left:%d\t right:%d \t B2A:%d\n", info->len,
+		printf("len:%d \t oppt_len:%d left:%d\t right:%d \t B2A:%d\n", info->len,info->len_opposite,
 				info->left, info->right, info->B2A);
 	}
 }
@@ -268,9 +270,9 @@ __global__ void help_debug(int loop) {
 		//D1 = 16;D2 = 64;
 		//D1 = 8;D2 = 64*4;//D2 has to be the multiply of WARP_SIZE, because
 
-		cudaStream_t &cal_index_stream= streams[2];
+		cudaStream_t &cal_index_stream= streams[0];
 		cudaStream_t &search_stream= streams[1];
-		cudaStream_t &save_stream= streams[0];
+		cudaStream_t &save_stream= streams[2];
 
 		block_size = D1 * D2;
 		block_2_size = block_size;
@@ -279,10 +281,7 @@ __global__ void help_debug(int loop) {
 		init_data(block_size);
 		init_device_variables();
 
-
-
-		int num_small_block = D1;
-		dim3 cal_indx_setting(num_small_block, 2);
+		dim3 cal_indx_setting(D1, 2);
 
 		CudaWatch cudawatch;
 		Watch cpuWatch;
@@ -300,37 +299,31 @@ __global__ void help_debug(int loop) {
 		while (true) {
 			back_next_relative_len(len1, len2, cal_pos);
 			//cu_checkError();
-			outln(len1);
-			outln(len2);
-			//debug
-			if (len1 <= 0 || len2 <= 0)
-				break;
-			int loops = min(len1, len2) / block_size;
-			if ( min(len1,len2) % block_size != 0 )
-				loops ++;
 
+			if (len1 <= 0 || len2 <= 0) break;
+			int loops = min(len1, len2) / block_size;
+			if ( min(len1,len2) % block_size != 0 ) loops ++;
+
+			//out(len1);out(len2);outln(loops);//debug
 			if (loops > 0) {
-				outln(loops);
 
 				//-- first stage
 				cal_indx<<<1, cal_indx_setting,0,cal_index_stream>>>(block_size, block_2_size,cal_pos);
 				move_pos(cal_pos);
 
-				cudaDeviceSynchronize();//need professor's help :P
 				//-- second stage
 				if (loops >= 2){
 					cal_indx<<<1, cal_indx_setting,0,cal_index_stream>>>(block_size, block_2_size,cal_pos);
 					move_pos(cal_pos);
 				}
+				else cudaStreamSynchronize(cal_index_stream);
 				algo2_search<<<2 * D1, D2 / 4,0,search_stream>>>(devV[search_pos], search_pos, 0);
 				move_pos(search_pos);
-
-				//cudaDeviceSynchronize();
 
 				//-- stage middle
 				for (int i=3;i<loops;i++) {
 					//help_debug<<<1,1>>>(loops);
-					//outline;outline;outln(loops);
+					//outline;outline;outln(i);
 					cal_indx<<<1, cal_indx_setting,0,cal_index_stream>>>(block_size, block_2_size,cal_pos);
 					algo2_search<<<2 * D1, D2 / 4,0,search_stream>>>(devV[search_pos], search_pos, 0);
 					scan_buffer_large<<<1, max( 2*D1,32),0,save_stream>>>(save_pos);
@@ -338,17 +331,19 @@ __global__ void help_debug(int loop) {
 					move_pos(cal_pos);move_pos(search_pos);move_pos(save_pos);
 					//cudaDeviceSynchronize();
 				}
+				cudaStreamSynchronize(save_stream);
 				if (loops >=2 ){
 					algo2_search<<<2 * D1, D2 / 4,0,search_stream>>>(devV[search_pos], search_pos, 0);
 					scan_buffer_large<<<1, max( 2*D1,32),0,save_stream>>>(save_pos);
 					compact<<<D_save1, D_save2,0,save_stream>>>(2*D1/D_save1,devV[save_pos],save_pos);
 					move_pos(search_pos);move_pos(save_pos);
 				}
-				//cudaDeviceSynchronize();
-				scan_buffer_large<<<1, max( 2*D1,32)>>>(save_pos);
-				compact<<<D_save1, D_save2>>>(2*D1/D_save1,devV[save_pos],save_pos);
+				cudaStreamSynchronize(search_stream);
+				scan_buffer_large<<<1, max( 2*D1,32),0,save_stream>>>(save_pos);
+				compact<<<D_save1, D_save2,0,save_stream>>>(2*D1/D_save1,devV[save_pos],save_pos);
 				move_pos(save_pos);
 			}
+			//return;
 		}
 		cudaDeviceSynchronize();
 		//back__result<<<1,1>>>();
@@ -516,31 +511,73 @@ void test_cal_indices() {
 
 #endif
 
-__global__ void show_debug_1() {
-	printf("wrong 1 times: %d\n", debug1.wrong_1);
-	printf("wrong 2 times: %d\n", debug1.wrong_2);
+__global__ void help_show_cal3(int indices_now, int num_part,bool printout = false) {
+	FOR_I(0,num_part)
+	{
+		struct partition_info *info = &partitions_info[indices_now][i];
+		printf("Partation: %d %d\n", i,info->len);
+		if (printout) {
+			FOR_I(0,info->len)
+				printf("%d \t", info->addr[i]);
+		}
+		printf("len:%d \t left:%d\t right:%d \t B2A:%d\n", info->len,info->left, info->right, info->B2A);
+	}
 }
+
+	void test_cal_idx3(){
+		n = 16;
+		generate_random(1.0, 0.5, 0.5);
+		//generate_case_cal3();
+		debug_a(host_lists[0],n);debug_a(host_lists[1],m);//debug
+		int block_size = 8;
+		init_data(block_size);
+		init_device_variables();
+		dim3 config(2,2);
+
+		FOR_I(0,2){
+//			cal_indx<<<1,config>>>(16,block_size,i);
+//			//help_show_cal3<<<1,1>>>(0,4,true);
+//			help_show_partation<<<1,1>>>(i,3,true);
+//			algo2_search<<<2 * 2, 2>>>(devV[0], i, 0);
+
+		}
+		cudaDeviceSynchronize();
+	}
+
+	void performance_read(char **args,double &alpha,double &scala1,double &scala2,int &n){
+		sscanf(args[1],"%lf",&alpha);
+		sscanf(args[2],"%lf",&scala1);
+		sscanf(args[3],"%lf",&scala2);
+		sscanf(args[4],"%d",&n);
+	}
 
 int main(int arg_num, char ** args) {
 
-
 	prepare_data(1024 * 1024 * 90);
+
+	double alpha;
+	double scala1;
+	double scala2;
+	performance_read(args,alpha,scala1,scala2,n);
+
+//	test_cal_idx3();
+//	return 0;
 
 	FOR_I(155,10000)
 	{
-		srand(i);
-		FOR_J(0,arg_num)
-		{
-			char ch = args[j][0];
-			if ('0' <= ch && ch <= '9') {
-				int seed;
-				sscanf(args[j], "%d", &seed);
-				srand(seed);
-				printf("SEED: %d\n", seed);
-			}
-		}
+		srand(time(0) % 1234567);
+//		FOR_J(0,arg_num)
+//		{
+//			char ch = args[j][0];
+//			if ('0' <= ch && ch <= '9') {
+//				int seed;
+//				sscanf(args[j], "%d", &seed);
+//				srand(seed);
+//				printf("SEED: %d\n", seed);
+//			}
+//		}
 		//srand(710852);
-		n = 1024*1024*40;
+		//n = 1024*1024*40;
 		//n = 1024*1024*20;
 		//n = 1024*1024*10;
 		//n = 1024*1024*3;
@@ -552,13 +589,13 @@ int main(int arg_num, char ** args) {
 		//n = 20;
 
 		//generate_case5();
-		generate_random(1.0, 2.0, 2.0);
+
+		generate_random(alpha, scala1, scala2);
 		//n = m = 70;
 		//generate_same(2.0);
 		//generate_shift(2.0,1);
 
-		cout << "generate data over srand(" << i << ") n=" << n << " m=" << m
-				<< endl;
+		cout << "generate data over srand(" << i << ") n=" << n << " m=" << m<< endl;
 		//debug_a(host_lists[0],n);debug_a(host_lists[1],m);//debug
 		printf("List 1 ( %d --- %d --- %d )\n", host_lists[0][0],host_lists[0][n / 2], host_lists[0][n - 1]);
 		printf("List 2 ( %d --- %d --- %d )\n", host_lists[1][0],host_lists[1][m / 2], host_lists[1][m - 1]);
@@ -580,8 +617,8 @@ int main(int arg_num, char ** args) {
 		//sort(resultList, resultList + Lresult);
 		outln(Lresult);
 		outln(cpuResultSize);
-		//debug_a(resultList,Lresult+20);
-		//debug_a(cpuResult,cpuResultSize);
+//		debug_a(resultList,Lresult+20);
+//		debug_a(cpuResult,cpuResultSize);
 
 		//continue;// DO NOT CHECK correctness
 

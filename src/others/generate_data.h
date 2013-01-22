@@ -17,5 +17,6 @@ void generate_case2();
 void generate_case3();
 void generate_case4();
 void generate_case5();
+void generate_case_cal3();
 
 #endif /* GENERATE_DATA_H_ */

@@ -20,11 +20,15 @@ using namespace std;
 	}
 
 	void generate_random(double alpha,double scala1,double scala2){
-		printf("alpha:%lf  scala1:%lf  scala2:%lf\n",alpha,scala1,scala2);//debug
-		int mod = n*4;
+		//int mod = n*4;
 		m = (int)((double)n*alpha + eps);
-		int mod1 = (int)((double)mod*scala1 + eps);
-		int mod2 = (int)((double)mod*scala2 + eps);
+		printf("alpha:%lf  scala1:%lf  scala2:%lf n:%d  m:%d\n",alpha,scala1,scala2,n,m);//debug
+		int mod1 = (int)((double)n*4*scala1 + eps);
+		int mod2 = (int)((double)m*4*scala2 + eps);
+		if ( mod1 > 1024*1024*90*20 || mod2 > 1024*1024*90*20 ){
+			printf("ERROE MOD!!");
+			exit(-1);
+		}
 		generate_different(host_lists[0],n,mod1);
 		sort(host_lists[0],host_lists[0]+n);
 		generate_different(host_lists[1],m,mod2);
@@ -116,4 +120,18 @@ using namespace std;
 		n = 64;
 		m = 64;
 		FOR_I(0,n) host_lists[0][i] = host_lists[1][i] = i*10 + rand() % 5;
+	}
+
+	void generate_case_cal3(){
+		printf(" to test cal_idx 3 \n\n");
+		n = m = 8;
+		int temp1[] = {17,29,35,46,86,90,95,99};
+		int temp2[] = {3,5,12,22,45,64,69,82};
+
+//		int temp1[] = {1,2,3,4,13,14,15,16};
+//		int temp2[] = {5,6,7,8, 9,10,11,12};
+
+		memcpy(host_lists[0],temp1,sizeof(temp1));
+		memcpy(host_lists[1],temp2,sizeof(temp2));
+
 	}
