@@ -4,12 +4,18 @@ exe="$compile_dir/list_intersection"
 
 current_dir=`pwd`
 
-num_blocks=32
 
-cal_times=10
+cal_times=1
 
+
+compile_once(){
+	cd $compile_dir
+	$current_dir/compile.sh
+	cd $current_dir
+}
 
 test_on_n(){
+num_blocks=32
 for i_blocks in `seq 1 5` ; do
 
 	local alpha=$1
@@ -22,9 +28,7 @@ for i_blocks in `seq 1 5` ; do
 	for num_warps in `seq 1 16` ;do
 		num_threads=$(($num_warps * 32 * 4))
 		sed -i -r "s/#define DEF_D2 [0-9]+/#define DEF_D2 $num_threads/g" $code_dir/common_defines.h
-		cd $compile_dir
-		$current_dir/compile.sh
-		cd $current_dir
+		compile_once
 		result=""
 		for times in `seq 1 $cal_times` ; do
 			temp=`$exe $alpha $scala1 $scala2 $size_n| grep "MY Algo:[0-9\.]" | cut -d ":" -f 2`
@@ -41,8 +45,10 @@ done
 
 work(){
 	alpha=`seq 1 10 && seq 20 10 40`
+	#alpha=`seq 20 10 40`
 	for i in $alpha ; do
 		scala1=`python -c 'import sys;a=int(sys.argv[1]);print "%d %d %.3lf %d" % (2*a,a,float(a)/2.0,1)' $i`
+		scala1="1"
 		for j in $scala1 ; do
 			scala2="1 2"
 			for k in $scala2 ; do
@@ -60,6 +66,7 @@ print n2,n3' $i`
 	done
 }
 
+#compile_once
 echo alpha scala1 scala2 N GridDim BlockDim time
 #test_on_n 1 4 2 10480000
 work

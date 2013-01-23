@@ -15,7 +15,7 @@
 #define PI acos(-1)
 #define eps 1e-9
 
-#define out(x) (cout<<#x<<":"<<x<<" ")
+//#define out(x) (cout<<#x<<":"<<x<<" ")
 #define outln(x) (cout<<#x<<":"<<x<<endl)
 #define outs(x) (cout<<x)
 #define outline (cout<<endl)
@@ -50,8 +50,8 @@ const int N = 50*1024*1024;
 #define SCAN_BLOCK_SIZE 1024
 #define LOG_SCAN_BLOCK_SIZE 10
 
-#define DEF_D1 256
-#define DEF_D2 1664
+#define DEF_D1 32
+#define DEF_D2 32*4
 
 struct partition_info{
 	int *addr,*opposite_addr;
@@ -60,9 +60,22 @@ struct partition_info{
 	bool B2A;
 };
 
+
+struct list_info{
+	int len;
+	int *start_addr;
+};
+
+struct dataset_info{
+	int len;
+};
+
+extern __device__ list_info *list_infos;
+extern __device__ list_info L1,L2;
+
 extern __device__ int *list_p0[2];// the origional   address
 extern __device__ int *list_p[QUEUE_SIZE][2]; // save the starting position of either list
-extern __device__ int calculated_indices_len[QUEUE_SIZE][4];
+extern __device__ int calculated_indices_len[QUEUE_SIZE][2];
 extern __device__ int swapped[QUEUE_SIZE];   // save swapped stage for each status
 extern __device__ int *_result;
 extern __device__ int gpu_result_size;
@@ -73,6 +86,10 @@ extern __device__ int *_result_addr[QUEUE_SIZE];
 extern __device__ int o_scan_buffers[QUEUE_SIZE][4+DEF_D1*2+32*2];
 extern __device__ int *_scan_buffers[QUEUE_SIZE];
 
+extern int *data_pool;
+extern int *gpu_data_pool;
+extern struct list_info *gpuData;
+extern struct list_info *cpuData;
 
 struct debug_structure{
 	int num_loop;
