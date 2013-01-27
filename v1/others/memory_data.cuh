@@ -30,6 +30,7 @@ void init_device_variables();
 void free_device_memory();
 void back_next_relative_len(int & len1,int & len2,int indices_now);
 void cuda_copyResult();
+void init_real_data(int block_size,int l1_id,int l2_id);
 
 
 

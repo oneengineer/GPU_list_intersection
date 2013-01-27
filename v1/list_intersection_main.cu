@@ -207,23 +207,17 @@ __global__ void help_show_partation2(int indices_now, int num_part) {
 	}
 }
 
-__global__ void back__result() {
-	_result += gpu_result_size;
+
+
+__global__ void show_list2(){
+	FOR_I(0,10)
+			printf("L1[%d] = %d\n",i,list_p0[0][i]);
+	FOR_I(0,10)
+			printf("L1[%d] = %d\n",i,list_p0[1][i]);
+
 }
 
-__global__ void show_addr_value(int *devL, int n) {
-	FOR_I(0,n)
-	{
-		printf("[%llx]: %d \t", devL + i, devL[i]);
-	}
-	printf("\n");
-}
-
-__global__ void help_debug(int loop) {
-	debug1.num_loop = loop;
-}
-
-	void work() {
+	void work(int l1_id,int l2_id) {
 
 		int numStream;
 		numStream = 4;
@@ -240,6 +234,8 @@ __global__ void help_debug(int loop) {
 		D1 = DEF_D1;
 		D2 = DEF_D2;
 
+		printf("CASE config:<%d %d>\n",D1,D2);
+
 		D_save1 = max(1,2*D1/16); // one block deal 4 parts
 		D_save2 = 64; // 64 threads per block for compacting
 
@@ -247,14 +243,17 @@ __global__ void help_debug(int loop) {
 		//D1 = 8;D2 = 64*4;//D2 has to be the multiply of WARP_SIZE, because
 
 		cudaStream_t &cal_index_stream= streams[0];
-		cudaStream_t &search_stream= streams[1];
-		cudaStream_t &save_stream= streams[2];
+		cudaStream_t &search_stream= streams[0];
+		cudaStream_t &save_stream= streams[0];
 
 		block_size = D1 * D2;
 		block_2_size = block_size;
 		//block_2_size = block_size*1000;
 
-		init_data(block_size);
+
+
+		//init_data(block_size);
+		init_real_data(block_size,l1_id,l2_id);
 		init_device_variables();
 
 		dim3 cal_indx_setting(D1, 2);
@@ -263,12 +262,9 @@ __global__ void help_debug(int loop) {
 		Watch cpuWatch;
 		cpuWatch.start();
 		cudawatch.start();
-		//cudaFuncSetCacheConfig(algo2_search,cudaFuncCachePreferShared);
 		cu_checkError();
 
-		//CUDPPHandle prefixsum_plan = prepare_prefixsum(block_size,streams+2);
-		//show_addr_value<<<1,1>>>(devL1,n);
-		//show_addr_value<<<1,1>>>(devL2,m);
+		//printf("addr : %llx %llx",devL1,devL2);
 
 		int len1, len2;
 		int cal_pos = 0, search_pos = 0, save_pos = 0; // they are for L1, L2 position
@@ -280,13 +276,13 @@ __global__ void help_debug(int loop) {
 			int loops = min(len1, len2) / block_size;
 			if ( min(len1,len2) % block_size != 0 ) loops ++;
 
-			//out(len1);out(len2);outln(loops);//debug
+			printf(" left n:%d  left m: %d loops:%d\n",len1,len2,loops);
 			if (loops > 0) {
-
 				//-- first stage
+				cudaDeviceSynchronize();
+
 				cal_indx<<<1, cal_indx_setting,0,cal_index_stream>>>(block_size, block_2_size,cal_pos);
 				move_pos(cal_pos);
-
 				//-- second stage
 				if (loops >= 2){
 					cal_indx<<<1, cal_indx_setting,0,cal_index_stream>>>(block_size, block_2_size,cal_pos);
@@ -295,6 +291,7 @@ __global__ void help_debug(int loop) {
 				else cudaStreamSynchronize(cal_index_stream);
 				algo2_search<<<2 * D1, D2 / 4,0,search_stream>>>(devV[search_pos], search_pos, 0);
 				move_pos(search_pos);
+				cudaStreamSynchronize(search_stream);
 
 				//-- stage middle
 				for (int i=3;i<loops;i++) {
@@ -408,11 +405,9 @@ __global__ void help_show_cal3(int indices_now, int num_part,bool printout = fal
 		cudaDeviceSynchronize();
 	}
 
-	void performance_read(char **args,double &alpha,double &scala1,double &scala2,int &n){
-		sscanf(args[1],"%lf",&alpha);
-		sscanf(args[2],"%lf",&scala1);
-		sscanf(args[3],"%lf",&scala2);
-		sscanf(args[4],"%d",&n);
+	void performance_read(char **args,int &l1,int &l2){
+		sscanf(args[1],"%d",&l1);
+		sscanf(args[2],"%d",&l2);
 	}
 
 	void test_read(){
@@ -420,16 +415,31 @@ __global__ void help_show_cal3(int indices_now, int num_part,bool printout = fal
 		exit(0);
 	}
 
+	void cpu_work(int l1_id,int l2_id){
+
+		list_info a,b;
+		a = cpuData[l1_id];
+		b = cpuData[l2_id];
+
+		printf("L1 use [%d] L2 use[%d]\n",l1_id,l2_id);
+		printf("List 1 ( %d --- %d --- %d ) %d\n",a.start_addr[0],a.start_addr[ a.len / 2], a.start_addr[a.len-1],a.len);
+		printf("List 1 ( %d --- %d --- %d ) %d\n",b.start_addr[0],b.start_addr[ b.len / 2], b.start_addr[b.len-1],b.len);
+
+		Watch watch;
+		watch.start();
+		cpuResultSize = merge_algo(a.start_addr, b.start_addr, 0, a.len, 0,b.len);
+		cout << "CPU ALGO time: " << watch.stop() << endl;
+		cout << "CPU find " << cpuResultSize<< endl;
+	}
+
 int main(int arg_num, char ** args) {
 
 	prepare_data(1024 * 1024 * 90);
 
-	test_read();
-
-	double alpha;
-	double scala1;
-	double scala2;
-	performance_read(args,alpha,scala1,scala2,n);
+	read_gov2();
+	int l1,l2;
+	performance_read(args,l1,l2);
+	//l1 = 171,l2=164;
 
 //	test_cal_idx3();
 //	return 0;
@@ -437,49 +447,14 @@ int main(int arg_num, char ** args) {
 	FOR_I(155,10000)
 	{
 		srand(time(0) % 1234567);
-//		FOR_J(0,arg_num)
-//		{
-//			char ch = args[j][0];
-//			if ('0' <= ch && ch <= '9') {
-//				int seed;
-//				sscanf(args[j], "%d", &seed);
-//				srand(seed);
-//				printf("SEED: %d\n", seed);
-//			}
-//		}
-		//srand(710852);
-		//n = 1024*1024*40;
-		//n = 1024*1024*20;
-		//n = 1024*1024*10;
-		//n = 1024*1024*3;
-		//n = 1024 * 1024;
-		//n = 1024*102;
-		//n = 5000;
-		//n = 660;
-		//n = 66;
-		//n = 20;
 
-		//generate_case5();
-
-		generate_random(alpha, scala1, scala2);
-		//n = m = 70;
-		//generate_same(2.0);
-		//generate_shift(2.0,1);
-
-		cout << "generate data over srand(" << i << ") n=" << n << " m=" << m<< endl;
-		//debug_a(host_lists[0],n);debug_a(host_lists[1],m);//debug
-		printf("List 1 ( %d --- %d --- %d )\n", host_lists[0][0],host_lists[0][n / 2], host_lists[0][n - 1]);
-		printf("List 2 ( %d --- %d --- %d )\n", host_lists[1][0],host_lists[1][m / 2], host_lists[1][m - 1]);
-
-		Watch watch;
-		watch.start();
-		int cpuResultSize = merge_algo(host_lists[0], host_lists[1], 0, n, 0,m);
-		cout << "CPU ALGO time: " << watch.stop() << endl;
 
 //	work3();//test bsearch
 //	return 0;
 
-		work();
+		cpu_work(l1,l2);
+
+		work(l1,l2);
 		cuda_copyResult();cout<<"copied back"<<endl;
 		cu_checkError();
 		free_device_memory();

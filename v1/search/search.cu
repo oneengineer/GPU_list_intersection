@@ -282,7 +282,9 @@
 		if (id < info.len_opposite){
 
 			myvalue = ((uint4 *)info.opposite_addr)[id];
-			((uint4 *)opposite_list)[id] = myvalue;
+			//((uint4 *)opposite_list)[id] = myvalue;
+			int base_id = id << 2;
+			opposite_list[base_id] = myvalue.x;opposite_list[base_id+1] = myvalue.y;opposite_list[base_id+2] = myvalue.z;opposite_list[base_id+3] = myvalue.w;
 			if ( id < info.len ){
 				myvalue = ((uint4 *)info.addr)[id];
 				flag1 = true;

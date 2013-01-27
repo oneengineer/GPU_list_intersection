@@ -1,0 +1,17 @@
+file length = 1019746952
+SUM = 178495025, list_num 4050
+L1 use [194] L2 use[134]
+List 1 ( 142 --- 525433 --- 1053099 ) 17652
+List 1 ( 1 --- 527018 --- 1053106 ) 379837
+CPU ALGO time: 0.000887156
+CPU find 11722
+CASE config:<512 2048>
+ left n:17652  left m: 379837 loops:1
+MY Algo:0.000206496
+MY Algo cpu test: 0.000251055
+copied back
+ results / elements = 11722 / 17652 0.664061
+Lresult:11722
+cpuResultSize:11722
+
+

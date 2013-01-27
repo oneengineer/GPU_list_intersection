@@ -45,9 +45,10 @@
 			cudaMalloc( (void **)&(devV[i]), sizeof(int)*sizeV );
 			cudaMemcpy( devV[i],temp,sizeof(int)*sizeV,H_T_D );
 		}
+
 		cudaMalloc( (void **)&devResult, sizeof(int)*(n+block_size) );
-		cudaMemcpy( devL1,gpuData[l1_id].start_addr,sizeof(int)*(n),D_T_D );
-		cudaMemcpy( devL2,gpuData[l2_id].start_addr,sizeof(int)*(m),D_T_D );
+		cudaMemcpy( devL1,cpuData[l1_id].start_addr,sizeof(int)*(n),H_T_D );
+		cudaMemcpy( devL2,cpuData[l2_id].start_addr,sizeof(int)*(m),H_T_D );
 
 		int max1 =  (1<<31-1) - 2 - block_size;
 		FOR_I(0,block_size) temp[i] = max1+i;

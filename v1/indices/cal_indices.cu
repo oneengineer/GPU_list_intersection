@@ -193,7 +193,7 @@
 			calculated_indices_len[indices_next][0] = begin_new1; //changed meaning
 			calculated_indices_len[indices_next][1] = begin_new2; //changed meaning
 
-			//printf("Next real start: [%d]:%d [%d]:%d\n",begin_new1,list_p[indices_next][0][begin_new1],begin_new2,list_p[indices_next][1][begin_new2]);
+			//printf("Next real start: [%d]:%d [%d]:%d \n",begin_new1,list_p[indices_next][0][begin_new1],begin_new2,list_p[indices_next][1][begin_new2]);
 		}
 
 	}

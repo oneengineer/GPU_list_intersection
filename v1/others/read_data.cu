@@ -8,7 +8,6 @@
 //using namespace std;
 
 const char *dir = "/home/sudakentemp/data1.dat";
-const int MAX_BLOCK_SIZE = 1024 * 3072;
 
 extern struct list_info *cpuData;
 /*
@@ -34,6 +33,12 @@ extern struct list_info *cpuData;
 		return true;
 	}
 
+	bool filter2(int len){
+		if (len < 1000*10)
+			return false;
+		return true;
+	}
+
 	void readStructure(std::ifstream &reader,int *lens,int &availiable_list_num,int &data_len_sum){
 		int fileLen;
 		reader.seekg(0,reader.end);
@@ -49,7 +54,7 @@ extern struct list_info *cpuData;
 			reader.seekg(current_offset,reader.beg);
 			int list_len = -1;
 			reader.read((char *)&list_len,4);
-			if (filter(list_len)){
+			if (filter2(list_len)){
 				lens[availiable_list_num ++] = current_offset;
 				data_len_sum += list_len;
 			}
@@ -84,7 +89,9 @@ extern struct list_info *cpuData;
 void read_gov2(){
 
 	std::ifstream reader;
+	std::ofstream writer;
 	reader.open(dir,std::fstream::binary | std::fstream::in);
+	//writer.open("./data_len_10000",std::fstream::out);
 	int list_num;
 	int array[10000];
 	int sum;
@@ -96,6 +103,7 @@ void read_gov2(){
 	FOR_I(0,list_num){
 		struct list_info temp = read_one_list(current_pool_pos,array[i],reader);
 		current_pool_pos += temp.len;
+		//writer << i <<" "<<temp.len<<std::endl;
 		cpuData[i] = temp;
 	}
 
